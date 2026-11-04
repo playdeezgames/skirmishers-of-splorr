@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Skirmishers of SPLORR!!</title>
+	<style>
+		html, body { margin: 0; height: 100%; background: #111; }
+		body { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font: 12px/1.4 monospace; }
+		canvas { width: min(100vw, calc((100vh - 44px) * 1020 / 580)); aspect-ratio: 1020 / 580; display: block; touch-action: none; }
+		footer { margin-top: 6px; height: 38px; overflow: hidden; text-align: center; max-width: 95vw; }
+		footer a { color: #aaa; }
+		#log { position: fixed; left: 0; bottom: 0; margin: 0; color: #aaa; font: 12px monospace; }
+	</style>
+</head>
+<body>
+	<canvas id="canvas" width="1020" height="580"></canvas>
+	<footer>
+		Skirmishers of SPLORR!! by TheGrumpyGameDev. Made by an AI agent (Claude Code) at the author's direction.
+		<a href="https://thegrumpygamedev.itch.io/">itch.io</a> · <a href="https://playdeezgames.github.io/oeuvre-of-splorr/">more games</a>
+	</footer>
+	<pre id="log"></pre>
+	<script src="odin.js"></script>
+	<script>
+		const cv = document.getElementById("canvas");
+		const g = cv.getContext("2d");
+		const rgb = (r, gr, b, a = 1) => `rgba(${r * 255 | 0},${gr * 255 | 0},${b * 255 | 0},${a})`;
+		const memory = new odin.WasmMemoryInterface();
+		const hexPath = (cx, cy, rad) => {
+			g.beginPath();
+			for (let i = 0; i < 6; i++) {
+				const a = Math.PI / 180 * (60 * i - 30); // pointy top
+				const x = cx + rad * Math.cos(a), y = cy + rad * Math.sin(a);
+				if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+			}
+			g.closePath();
+		};
+		// Imports for `foreign import canvas "canvas"` in src/main.odin; all in canvas pixels.
+		const imports = {
+			canvas: {
+				clear_canvas: (r, gr, b) => {
+					g.fillStyle = rgb(r, gr, b);
+					g.fillRect(0, 0, cv.width, cv.height);
+				},
+				fill_rect: (x, y, w, h, r, gr, b, a) => {
+					g.fillStyle = rgb(r, gr, b, a);
+					g.fillRect(x, y, w, h);
+				},
+				draw_hex: (cx, cy, rad, fr, fg, fb, fa, sr, sg, sb, sa, line) => {
+					hexPath(cx, cy, rad);
+					if (fa > 0) { g.fillStyle = rgb(fr, fg, fb, fa); g.fill(); }
+					if (sa > 0 && line > 0) { g.strokeStyle = rgb(sr, sg, sb, sa); g.lineWidth = line; g.stroke(); }
+				},
+				draw_circle: (cx, cy, rad, fr, fg, fb, sr, sg, sb, line) => {
+					g.beginPath();
+					g.arc(cx, cy, rad, 0, Math.PI * 2);
+					g.fillStyle = rgb(fr, fg, fb); g.fill();
+					if (line > 0) { g.strokeStyle = rgb(sr, sg, sb); g.lineWidth = line; g.stroke(); }
+				},
+				draw_text: (ptr, len, x, y, size, r, gr, b, align) => {
+					g.font = `${size}px monospace`;
+					g.textAlign = ["left", "center", "right"][align] || "left";
+					g.textBaseline = "middle";
+					g.fillStyle = rgb(r, gr, b);
+					g.fillText(memory.loadString(ptr, len), x, y);
+				},
+			},
+		};
+		odin.runWasm("game.wasm", document.getElementById("log"), imports, memory);
+
+		// Mouse: canvas pixels, whatever size the canvas is shown at.
+		const toCanvas = (e) => {
+			const r = cv.getBoundingClientRect();
+			return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
+		};
+		cv.addEventListener("pointermove", (e) => {
+			if (memory.exports) memory.exports.mouse_move(...toCanvas(e));
+		});
+		cv.addEventListener("pointerleave", () => {
+			if (memory.exports) memory.exports.mouse_move(-1, -1);
+		});
+		cv.addEventListener("pointerdown", (e) => {
+			if (!memory.exports) return;
+			const [x, y] = toCanvas(e);
+			memory.exports.mouse_move(x, y);
+			memory.exports.mouse_click(x, y);
+		});
+
+		// ?scenario=2 watches the computer play both sides.
+		const wanted = parseInt(new URLSearchParams(location.search).get("scenario"), 10);
+		if (wanted > 0) {
+			const timer = setInterval(() => {
+				if (memory.exports && memory.exports.load_scenario) {
+					clearInterval(timer);
+					memory.exports.load_scenario(wanted);
+				}
+			}, 50);
+		}
+	</script>
+</body>
+</html>
