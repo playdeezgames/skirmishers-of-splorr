@@ -21,7 +21,7 @@ A single-player hex-and-counter wargame in the browser. Each scenario sets up th
 python3 -m http.server -d build/web 8123                # serve (wasm needs http, not file://)
 ```
 
-`.claude/launch.json` defines the `skirmishers` preview server on port 8123. `?scenario=2` loads the computer-vs-computer scenario, which is useful for watching the AI and combat. Both scripts run with `-vet -strict-style`.
+`.claude/launch.json` defines the `skirmishers` preview server on port 8123. `?scenario=N` (1-based index into `SCENARIOS`) loads a scenario: 2 is the 4-vs-4 and 3 the 20-vs-20 computer-vs-computer battle, both useful for watching the AI and combat. Both scripts run with `-vet -strict-style`.
 
 ## Architecture
 

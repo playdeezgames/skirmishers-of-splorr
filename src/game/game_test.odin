@@ -326,3 +326,18 @@ test_moved_then_finished :: proc(t: ^testing.T) {
 	g.units[1].pos = {7, 5}
 	testing.expect(t, !unit_finished(&g, a))
 }
+
+@(test)
+test_kobold_battle :: proc(t: ^testing.T) {
+	g: Game
+	for seed in u64(1) ..= 10 {
+		new_game(&g, 2, seed)
+		testing.expect_value(t, living_units(&g, 0), 20)
+		testing.expect_value(t, living_units(&g, 1), 20)
+		for steps := 0; g.winner < 0 && steps < 50000; steps += 1 {
+			ai_step(&g)
+		}
+		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
+		testing.expectf(t, g.turn < 100, "seed %d: took %d turns", seed, g.turn)
+	}
+}

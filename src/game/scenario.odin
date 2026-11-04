@@ -10,6 +10,7 @@ Scenario :: struct {
 SCENARIOS := [?]Scenario {
 	{"Kobold Skirmish", setup_kobold_skirmish},
 	{"Kobold Skirmish (computer vs computer)", setup_kobold_watch},
+	{"Kobold Battle: 20 vs 20", setup_kobold_battle},
 }
 
 RED :: [3]f32{0.85, 0.25, 0.2}
@@ -111,4 +112,28 @@ setup_kobold_watch :: proc(g: ^Game) {
 	red := add_faction(g, "Red", .Computer, RED)
 	blue := add_faction(g, "Blue", .Computer, BLUE)
 	place_kobold_armies(g, red, blue)
+}
+
+// Two blocks of kobolds, `per_side` each, filling columns from the map edges
+// inward across the middle rows.
+place_kobold_blocks :: proc(g: ^Game, red, blue: int, per_side: int) {
+	BLOCK_ROWS :: 10
+	first_row := (ROWS - BLOCK_ROWS) / 2
+	for i in 0 ..< per_side {
+		col := 1 + i / BLOCK_ROWS
+		row := first_row + i % BLOCK_ROWS
+		for side in 0 ..< 2 {
+			h := Hex{col, row} if side == 0 else Hex{COLS - 1 - col, row}
+			if g.terrain[h.y][h.x] == .Forest { g.terrain[h.y][h.x] = .Grass }
+			add_unit(g, .Kobold, red if side == 0 else blue, h)
+		}
+	}
+}
+
+setup_kobold_battle :: proc(g: ^Game) {
+	generate_clumped_forest(g, 9, 3, 9)
+	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
+	red := add_faction(g, "Red", .Computer, RED)
+	blue := add_faction(g, "Blue", .Computer, BLUE)
+	place_kobold_blocks(g, red, blue, 20)
 }
