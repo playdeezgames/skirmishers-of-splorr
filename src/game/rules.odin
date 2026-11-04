@@ -333,6 +333,7 @@ Attack_Result :: struct {
 	killed: bool,
 }
 
+// Attacking also ends the attacker's movement for the turn.
 // Attacker rolls its attack dice, the target rolls its defence dice; each block
 // cancels one hit, and every hit left costs the target a body point.
 attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool) {
@@ -344,6 +345,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	res.blocks = roll_dice(&g.rng, unit_type(t).defense)
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
+	a.moves_left = 0 // attacking ends the unit's movement
 	t.body -= res.damage
 	if t.body <= 0 {
 		t.body = 0
@@ -359,6 +361,25 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	}
 	check_winner(g)
 	return res, true
+}
+
+// True when the unit can do nothing more this turn: it has attacked (which also
+// ends movement), or it has no movement left and no enemy in range.
+unit_finished :: proc(g: ^Game, unit: int) -> bool {
+	u := &g.units[unit]
+	if u.faction != g.current { return false }
+	if u.attacked { return true }
+	if u.moves_left > 0 { return false }
+	for i in 0 ..< g.unit_count {
+		if can_attack(g, unit, i) { return false }
+	}
+	return true
+}
+
+// True when the unit has spent any movement this turn.
+unit_has_moved :: proc(g: ^Game, unit: int) -> bool {
+	u := &g.units[unit]
+	return u.faction == g.current && u.moves_left < unit_type(u).move * HALVES_PER_POINT
 }
 
 check_winner :: proc(g: ^Game) {

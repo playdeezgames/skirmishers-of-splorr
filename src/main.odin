@@ -227,10 +227,19 @@ draw_map :: proc() {
 		if !u.alive { continue }
 		p := hex_centre(u.pos)
 		col := g.factions[u.faction].color
-		spent := u.faction == g.current && u.attacked && u.moves_left == 0
-		if spent { col *= 0.55 }
+		finished := game.unit_finished(&g, i)
+		letter := WHITE
+		if finished {
+			// greyed out: a little of the faction colour left so sides stay readable
+			col = col * 0.25 + Color{0.38, 0.38, 0.4}
+			letter = Color{0.75, 0.75, 0.78}
+		}
 		draw_circle(p.x, p.y, HEX_R * 0.62, col.r, col.g, col.b, 0.1, 0.1, 0.1, 2)
-		text("K", p.x, p.y + 1, 13, WHITE, 1)
+		text("K", p.x, p.y + 1, 13, letter, 1)
+		if !finished && game.unit_has_moved(&g, i) {
+			// moved but can still act: a small pip at the upper right
+			draw_circle(p.x + HEX_R * 0.5, p.y - HEX_R * 0.5, 3.5, 1, 1, 1, 0.1, 0.1, 0.1, 1)
+		}
 		if selected >= 0 && game.can_attack(&g, selected, i) {
 			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, 1, 0.15, 0.1, 1, 3)
 		}
@@ -269,12 +278,19 @@ draw_panel :: proc() {
 		text(fmt.tprintf("%s %s", g.factions[u.faction].name, ut.name), x, y, 15)
 		text(fmt.tprintf("Attack %s   Defence %s", dice_text(ut.attack), dice_text(ut.defense)), x, y + 20, 13, GREY)
 		text(fmt.tprintf("Body %d/%d   Move %s/%d   Range %d-%d", u.body, ut.body, points_text(u.moves_left), ut.move, ut.min_range, ut.max_range), x, y + 38, 13, GREY)
-		text("attacked this turn" if u.attacked else "may attack", x, y + 56, 13, GREY)
+		state := "may attack"
+		if u.attacked {
+			state = "attacked: done for this turn"
+		} else if game.unit_finished(&g, selected) {
+			state = "no moves left and nobody in range"
+		}
+		text(state, x, y + 56, 13, GREY)
 	} else if human_turn() {
 		text("Click one of your units to select it.", x, y, 13, GREY)
 		text("Yellow hexes: where it can move.", x, y + 18, 13, GREY)
 		text("Red outline: an enemy it can attack.", x, y + 36, 13, GREY)
-		text("Space ends the turn, N starts a new game.", x, y + 54, 13, GREY)
+		text("White pip: moved. Grey: done for the turn.", x, y + 54, 13, GREY)
+		text("Space ends the turn, N starts a new game.", x, y + 72, 13, GREY)
 	}
 	if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)

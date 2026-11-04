@@ -294,3 +294,35 @@ test_scenario_has_a_road :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, seen[.East_West] && seen[.North_South], "both road directions occur")
 }
+
+@(test)
+test_attack_ends_movement :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Kobold, 0, {5, 5})
+	b := add_unit(&g, .Kobold, 1, {6, 5})
+	testing.expect(t, !unit_finished(&g, a))
+	_, ok := attack(&g, a, b)
+	testing.expect(t, ok)
+	testing.expect_value(t, g.units[a].moves_left, 0)
+	testing.expect(t, !move_unit(&g, a, {4, 5}), "no moving after an attack")
+	testing.expect(t, unit_finished(&g, a))
+}
+
+@(test)
+test_moved_then_finished :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Kobold, 0, {2, 5})
+	add_unit(&g, .Kobold, 1, {15, 5})
+	testing.expect(t, !unit_has_moved(&g, a))
+	testing.expect(t, move_unit(&g, a, {4, 5}))
+	testing.expect(t, unit_has_moved(&g, a))
+	testing.expect(t, !unit_finished(&g, a), "movement left")
+	testing.expect(t, move_unit(&g, a, {6, 5}))
+	testing.expect(t, unit_finished(&g, a), "no movement and nobody in range")
+
+	// out of movement but next to an enemy: it may still attack
+	g.units[1].pos = {7, 5}
+	testing.expect(t, !unit_finished(&g, a))
+}
