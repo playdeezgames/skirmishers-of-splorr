@@ -46,14 +46,52 @@ generate_clumped_forest :: proc(g: ^Game, clumps, min_size, max_size: int) {
 	}
 }
 
+Road_Direction :: enum u8 {
+	East_West,
+	North_South,
+}
+
+// Lays a road from one edge of the map to the opposite edge. Each step moves to
+// a neighbour that is closer to the far end, picked at random among those, so
+// the road wanders but always connects. Road replaces whatever was there.
+generate_road :: proc(g: ^Game, dir: Road_Direction) -> (start, end: Hex) {
+	// keep the ends away from the corners
+	lo := 4
+	switch dir {
+	case .East_West:
+		start = {0, lo + rng_int(&g.rng, ROWS - 2 * lo)}
+		end = {COLS - 1, lo + rng_int(&g.rng, ROWS - 2 * lo)}
+	case .North_South:
+		start = {lo + rng_int(&g.rng, COLS - 2 * lo), 0}
+		end = {lo + rng_int(&g.rng, COLS - 2 * lo), ROWS - 1}
+	}
+	h := start
+	g.terrain[h.y][h.x] = .Road
+	for h != end {
+		nbs, n := neighbours(h)
+		closer: [6]Hex
+		count := 0
+		d := hex_distance(h, end)
+		for nb in nbs[:n] {
+			if hex_distance(nb, end) < d {
+				closer[count] = nb
+				count += 1
+			}
+		}
+		h = closer[rng_int(&g.rng, count)]
+		g.terrain[h.y][h.x] = .Road
+	}
+	return
+}
+
 // Two lines of four kobolds facing each other across the map.
 place_kobold_armies :: proc(g: ^Game, red, blue: int) {
 	rows := [4]int{6, 8, 11, 13}
 	for r in rows {
 		left := Hex{2, r}
 		right := Hex{COLS - 3, r}
-		g.terrain[left.y][left.x] = .Grass
-		g.terrain[right.y][right.x] = .Grass
+		if g.terrain[left.y][left.x] == .Forest { g.terrain[left.y][left.x] = .Grass }
+		if g.terrain[right.y][right.x] == .Forest { g.terrain[right.y][right.x] = .Grass }
 		add_unit(g, .Kobold, red, left)
 		add_unit(g, .Kobold, blue, right)
 	}
@@ -61,6 +99,7 @@ place_kobold_armies :: proc(g: ^Game, red, blue: int) {
 
 setup_kobold_skirmish :: proc(g: ^Game) {
 	generate_clumped_forest(g, 9, 3, 9)
+	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
 	red := add_faction(g, "Red", .Human, RED)
 	blue := add_faction(g, "Blue", .Computer, BLUE)
 	place_kobold_armies(g, red, blue)
@@ -68,6 +107,7 @@ setup_kobold_skirmish :: proc(g: ^Game) {
 
 setup_kobold_watch :: proc(g: ^Game) {
 	generate_clumped_forest(g, 9, 3, 9)
+	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
 	red := add_faction(g, "Red", .Computer, RED)
 	blue := add_faction(g, "Blue", .Computer, BLUE)
 	place_kobold_armies(g, red, blue)

@@ -34,6 +34,7 @@ AI_DELAY :: 0.35 // seconds between computer actions
 Color :: [3]f32
 GRASS :: Color{0.42, 0.62, 0.3}
 FOREST :: Color{0.18, 0.4, 0.2}
+ROAD :: Color{0.72, 0.6, 0.4}
 TREE :: Color{0.08, 0.24, 0.1}
 WHITE :: Color{1, 1, 1}
 GREY :: Color{0.65, 0.65, 0.7}
@@ -164,6 +165,13 @@ dice_text :: proc(d: game.Dice) -> string {
 	return out if out != "" else "none"
 }
 
+// Half points as text: 7 -> "3.5", 8 -> "4".
+points_text :: proc(halves: int) -> string {
+	whole := halves / game.HALVES_PER_POINT
+	if halves % game.HALVES_PER_POINT == 0 { return fmt.tprintf("%d", whole) }
+	return fmt.tprintf("%d.5", whole)
+}
+
 button :: proc(b: Button, label: string, enabled: bool) {
 	bg := Color{0.25, 0.3, 0.42} if enabled else Color{0.18, 0.18, 0.22}
 	fill_rect(b.x, b.y, b.w, b.h, bg.r, bg.g, bg.b, 1)
@@ -198,7 +206,12 @@ draw_map :: proc() {
 			h := game.Hex{col, row}
 			p := hex_centre(h)
 			t := game.terrain_at(&g, h)
-			fill := GRASS if t == .Grass else FOREST
+			fill: Color
+			switch t {
+			case .Grass:  fill = GRASS
+			case .Forest: fill = FOREST
+			case .Road:   fill = ROAD
+			}
 			draw_hex(p.x, p.y, HEX_R, fill.r, fill.g, fill.b, 1, 0, 0, 0, 0.25, 1)
 			if t == .Forest {
 				text("♣", p.x - 5, p.y - 3, 11, TREE, 1)
@@ -255,7 +268,7 @@ draw_panel :: proc() {
 		ut := game.unit_type(u)
 		text(fmt.tprintf("%s %s", g.factions[u.faction].name, ut.name), x, y, 15)
 		text(fmt.tprintf("Attack %s   Defence %s", dice_text(ut.attack), dice_text(ut.defense)), x, y + 20, 13, GREY)
-		text(fmt.tprintf("Body %d/%d   Move %d/%d   Range %d-%d", u.body, ut.body, u.moves_left, ut.move, ut.min_range, ut.max_range), x, y + 38, 13, GREY)
+		text(fmt.tprintf("Body %d/%d   Move %s/%d   Range %d-%d", u.body, ut.body, points_text(u.moves_left), ut.move, ut.min_range, ut.max_range), x, y + 38, 13, GREY)
 		text("attacked this turn" if u.attacked else "may attack", x, y + 56, 13, GREY)
 	} else if human_turn() {
 		text("Click one of your units to select it.", x, y, 13, GREY)
@@ -265,7 +278,9 @@ draw_panel :: proc() {
 	}
 	if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)
-		text(fmt.tprintf("Hex %d,%d: %s (move cost %d)", hover.x, hover.y, game.TERRAIN_NAMES[t], game.TERRAIN_MOVE_COST[t]), x, 200, 13, GREY)
+		cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
+		if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road))) }
+		text(fmt.tprintf("Hex %d,%d: %s (%s)", hover.x, hover.y, game.TERRAIN_NAMES[t], cost), x, 200, 13, GREY)
 		if hu := game.unit_at(&g, hover); hu >= 0 {
 			u := &g.units[hu]
 			text(fmt.tprintf("%s %s, body %d", g.factions[u.faction].name, game.unit_type(u).name, u.body), x, 218, 13, g.factions[u.faction].color)

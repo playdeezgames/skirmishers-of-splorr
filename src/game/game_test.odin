@@ -69,10 +69,11 @@ test_forest_costs_two :: proc(t: ^testing.T) {
 	k := add_unit(&g, .Kobold, 0, {5, 5})
 	g.terrain[5][6] = .Forest
 	costs := movement_costs(&g, k)
-	testing.expect_value(t, costs[5][6], 2)
-	testing.expect_value(t, costs[5][4], 1)
-	testing.expect_value(t, costs[5][8], 4) // forest 2, then two grass
-	testing.expect_value(t, costs[5][9], 5) // through or around the forest
+	H :: HALVES_PER_POINT
+	testing.expect_value(t, costs[5][6], 2 * H)
+	testing.expect_value(t, costs[5][4], 1 * H)
+	testing.expect_value(t, costs[5][8], 4 * H) // forest 2, then two grass
+	testing.expect_value(t, costs[5][9], 5 * H) // through or around the forest
 	testing.expect(t, can_move(&g, k, {8, 5}, &costs))
 	testing.expect(t, !can_move(&g, k, {9, 5}, &costs))
 }
@@ -84,7 +85,7 @@ test_move_spends_points :: proc(t: ^testing.T) {
 	k := add_unit(&g, .Kobold, 0, {5, 5})
 	g.terrain[5][6] = .Forest
 	testing.expect(t, move_unit(&g, k, {6, 5}))
-	testing.expect_value(t, g.units[k].moves_left, 2)
+	testing.expect_value(t, g.units[k].moves_left, 2 * HALVES_PER_POINT)
 	testing.expect(t, move_unit(&g, k, {8, 5}))
 	testing.expect_value(t, g.units[k].moves_left, 0)
 	testing.expect(t, !move_unit(&g, k, {9, 5}))
@@ -99,12 +100,12 @@ test_enemies_block_friends_do_not :: proc(t: ^testing.T) {
 	for row in 1 ..< ROWS { for col in 0 ..< COLS { g.terrain[row][col] = .Forest } }
 	add_unit(&g, .Kobold, 0, {1, 0})
 	costs := movement_costs(&g, k)
-	testing.expect_value(t, costs[0][2], 2) // through the friend
+	testing.expect_value(t, costs[0][2], 2 * HALVES_PER_POINT) // through the friend
 	testing.expect(t, !can_move(&g, k, {1, 0}, &costs)) // but not onto it
 
 	g.units[1].faction = 1
 	costs = movement_costs(&g, k)
-	testing.expect(t, costs[0][2] != 2) // the enemy blocks the corridor
+	testing.expect(t, costs[0][2] != 2 * HALVES_PER_POINT) // the enemy blocks the corridor
 }
 
 @(test)
@@ -162,7 +163,7 @@ test_end_turn_resets_next_faction :: proc(t: ^testing.T) {
 	g.units[b].attacked = true
 	end_turn(&g)
 	testing.expect_value(t, g.current, 1)
-	testing.expect_value(t, g.units[b].moves_left, 4)
+	testing.expect_value(t, g.units[b].moves_left, 4 * HALVES_PER_POINT)
 	testing.expect(t, !g.units[b].attacked)
 	end_turn(&g)
 	testing.expect_value(t, g.current, 0)
@@ -183,7 +184,7 @@ test_scenario_setup :: proc(t: ^testing.T) {
 	testing.expect(t, forest > 10 && forest < ROWS * COLS / 3, "mostly grass with some forest")
 	for i in 0 ..< g.unit_count {
 		u := g.units[i]
-		testing.expect_value(t, terrain_at(&g, u.pos), Terrain.Grass)
+		testing.expect(t, terrain_at(&g, u.pos) != .Forest, "units start in the open")
 	}
 }
 
@@ -213,4 +214,83 @@ test_watch_games_finish :: proc(t: ^testing.T) {
 		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
 		testing.expectf(t, g.turn < 60, "seed %d: took %d turns", seed, g.turn)
 	}
+}
+
+@(test)
+test_road_costs :: proc(t: ^testing.T) {
+	H :: HALVES_PER_POINT
+	testing.expect_value(t, step_cost(.Road, .Road), 1) // half a point
+	testing.expect_value(t, step_cost(.Grass, .Road), 1 * H)
+	testing.expect_value(t, step_cost(.Road, .Grass), 1 * H)
+	testing.expect_value(t, step_cost(.Road, .Forest), 2 * H)
+
+	g: Game
+	blank_game(&g)
+	for col in 0 ..< COLS { g.terrain[10][col] = .Road }
+	g.terrain[10][19] = .Forest
+	k := add_unit(&g, .Kobold, 0, {2, 10})
+	costs := movement_costs(&g, k)
+	testing.expect_value(t, costs[10][10], 8) // 8 road steps: 4 points
+	testing.expect(t, can_move(&g, k, {10, 10}, &costs))
+	testing.expect(t, !can_move(&g, k, {11, 10}, &costs))
+	testing.expect_value(t, costs[10][19], 16 + 2 * H) // 16 road steps, then forest at full cost
+	// half points are spent and left over correctly
+	testing.expect(t, move_unit(&g, k, {5, 10}))
+	testing.expect_value(t, g.units[k].moves_left, 5)
+}
+
+// Walks the road from a hex on the first edge and checks it reaches the far edge.
+road_crosses :: proc(g: ^Game, dir: Road_Direction) -> bool {
+	seen: [ROWS][COLS]bool
+	stack: [ROWS * COLS]Hex
+	top := 0
+	for i in 0 ..< (ROWS if dir == .East_West else COLS) {
+		h := Hex{0, i} if dir == .East_West else Hex{i, 0}
+		if terrain_at(g, h) == .Road && !seen[h.y][h.x] {
+			seen[h.y][h.x] = true
+			stack[top] = h
+			top += 1
+		}
+	}
+	for top > 0 {
+		top -= 1
+		h := stack[top]
+		if (dir == .East_West && h.x == COLS - 1) || (dir == .North_South && h.y == ROWS - 1) { return true }
+		nbs, n := neighbours(h)
+		for nb in nbs[:n] {
+			if terrain_at(g, nb) == .Road && !seen[nb.y][nb.x] {
+				seen[nb.y][nb.x] = true
+				stack[top] = nb
+				top += 1
+			}
+		}
+	}
+	return false
+}
+
+@(test)
+test_road_spans_the_map :: proc(t: ^testing.T) {
+	g: Game
+	for seed in u64(1) ..= 100 {
+		for dir in Road_Direction {
+			blank_game(&g, seed)
+			generate_road(&g, dir)
+			testing.expectf(t, road_crosses(&g, dir), "seed %d %v: road does not cross", seed, dir)
+		}
+	}
+}
+
+@(test)
+test_scenario_has_a_road :: proc(t: ^testing.T) {
+	g: Game
+	seen: [Road_Direction]bool
+	for seed in u64(1) ..= 40 {
+		new_game(&g, 0, seed)
+		ew := road_crosses(&g, .East_West)
+		ns := road_crosses(&g, .North_South)
+		testing.expectf(t, ew || ns, "seed %d: no road across the map", seed)
+		if ew { seen[.East_West] = true }
+		if ns { seen[.North_South] = true }
+	}
+	testing.expect(t, seen[.East_West] && seen[.North_South], "both road directions occur")
 }

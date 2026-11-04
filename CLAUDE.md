@@ -8,7 +8,7 @@ A single-player hex-and-counter wargame in the browser. Each scenario sets up th
 
 - **Combat is HeroQuest-style dice**: the attacker rolls its attack dice and the target rolls its defence dice. Each die scores with a chance set by its colour: white 1/3, red 1/2, black 2/3. Each block cancels one hit, every hit left costs one body point, and a unit at 0 body points dies.
 - **Units** have attack dice, defence dice, body points, movement points and a min/max attack range in hexes. Range 1–1 means melee only. Each unit can move (spending points over several moves) and attack once per turn, in either order.
-- **Terrain sets the movement cost**: grass costs 1, forest 2. Units can pass through friendly units but not enemies, and cannot stop on an occupied hex.
+- **Terrain sets the movement cost**: grass 1, forest 2, road 1. A step from road to road costs only 1/2; leaving a road costs the full cost of the hex entered. Movement is therefore counted in **half points** internally (`HALVES_PER_POINT`): `moves_left` and `movement_costs` are in halves, while `Unit_Type.move` and `TERRAIN_MOVE_COST` are in whole points. Units can pass through friendly units but not enemies, and cannot stop on an occupied hex.
 - **Map**: 20×20 staggered ("odd-r") grid of pointy-topped hexes, where odd rows are shifted half a hex to the right.
 - **Not built yet:** ranged unit types, elevation, and fog of war. When fog of war is added, the AI must only see what its own side can see, not the hidden state.
 
@@ -27,8 +27,8 @@ python3 -m http.server -d build/web 8123                # serve (wasm needs http
 
 - `src/game/`: package `game`, all of the rules, with **no browser imports**, so it builds and tests natively.
   - `hex.odin`: offset↔cube conversion, neighbours (different offsets for even and odd rows), distance, and hex↔pixel conversion.
-  - `rules.odin`: terrain and dice tables, `UNIT_TYPES` (indexed by `Unit_Kind`), the `Game` struct (fixed-size arrays and a ring-buffer log, no allocation), Dijkstra `movement_costs`, `move_unit`, `attack`, `end_turn`, and win checks. `move_unit` and `attack` refuse units that are not on the current faction's side.
-  - `scenario.odin`: the `SCENARIOS` table (name + setup proc). `new_game(g, scenario, seed)` resets everything. Forest is grown in clumps from random seed hexes, and deployment hexes are forced to grass.
+  - `rules.odin`: terrain and dice tables, `UNIT_TYPES` (indexed by `Unit_Kind`), the `Game` struct (fixed-size arrays and a ring-buffer log, no allocation), `step_cost(from, to)`, Dijkstra `movement_costs` (fixed-size binary heap; a linear scan was ~10× slower and made the AI tests take 20 s), `move_unit`, `attack`, `end_turn`, and win checks. `move_unit` and `attack` refuse units that are not on the current faction's side.
+  - `scenario.odin`: the `SCENARIOS` table (name + setup proc). `new_game(g, scenario, seed)` resets everything. Forest is grown in clumps from random seed hexes, then `generate_road` lays a road from one edge to the opposite edge (east–west or north–south, chosen at random) by stepping to a random neighbour closer to the far end. Forest under a deployment hex is cleared to grass.
   - `ai.odin`: `ai_step` plays one computer unit per call (or ends the turn), so the page can show each action. `ai_take_turn` runs a whole turn, for tests.
   - `game_test.odin`: has `#+build !js`, which is required because Odin otherwise compiles `_test` files into the wasm build and fails on `core:os`.
 - **Randomness belongs to the game** (`Rng`, splitmix64 in `g.rng`) and is seeded by `new_game`. Use explicit `u64` because `int` is 32 bits on `js_wasm32`. Tests pick seeds to force outcomes.

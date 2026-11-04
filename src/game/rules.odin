@@ -7,17 +7,32 @@ import "core:fmt"
 Terrain :: enum u8 {
 	Grass,
 	Forest,
+	Road,
 }
 
 TERRAIN_NAMES := [Terrain]string {
 	.Grass  = "Grass",
 	.Forest = "Forest",
+	.Road   = "Road",
 }
 
-// Movement points spent to enter a hex of this terrain.
+// Movement points spent to enter a hex of this terrain. Moving from road to
+// road is cheaper still (ROAD_TO_ROAD_HALVES); leaving a road onto other terrain
+// costs that terrain's full amount.
 TERRAIN_MOVE_COST := [Terrain]int {
 	.Grass  = 1,
 	.Forest = 2,
+	.Road   = 1,
+}
+
+// Movement is counted in half points so a road step can cost 1/2.
+HALVES_PER_POINT :: 2
+ROAD_TO_ROAD_HALVES :: 1
+
+// Cost in half points of stepping from one hex into a neighbouring one.
+step_cost :: proc(from, to: Terrain) -> int {
+	if from == .Road && to == .Road { return ROAD_TO_ROAD_HALVES }
+	return TERRAIN_MOVE_COST[to] * HALVES_PER_POINT
 }
 
 // ---------------------------------------------------------------- dice
@@ -95,7 +110,7 @@ Unit :: struct {
 	pos:        Hex,
 	body:       int,
 	alive:      bool,
-	moves_left: int,
+	moves_left: int, // in half points (HALVES_PER_POINT)
 	attacked:   bool, // has made its attack this turn
 	done:       bool, // the computer has finished with it this turn
 }
@@ -182,7 +197,7 @@ add_unit :: proc(g: ^Game, kind: Unit_Kind, faction: int, pos: Hex) -> int {
 		pos        = pos,
 		body       = t.body,
 		alive      = true,
-		moves_left = t.move,
+		moves_left = t.move * HALVES_PER_POINT,
 	}
 	g.unit_count += 1
 	return idx
@@ -207,39 +222,79 @@ living_units :: proc(g: ^Game, faction: int) -> int {
 
 UNREACHABLE :: -1
 
-// Cheapest movement cost from the unit's hex to every hex, ignoring its
+// Cheapest movement cost, in half points, from the unit's hex to every hex, ignoring its
 // remaining points (UNREACHABLE where there is no way in). Units may pass through
 // friends but not enemies; whether a hex can be stopped on is can_move's job.
 movement_costs :: proc(g: ^Game, unit: int) -> (cost: [ROWS][COLS]int) {
 	u := &g.units[unit]
 	for &row in cost { for &c in row { c = UNREACHABLE } }
-	done: [ROWS][COLS]bool
+	// who stands where, so the search does not rescan the unit list
+	blocked: [ROWS][COLS]bool
+	for i in 0 ..< g.unit_count {
+		o := &g.units[i]
+		if o.alive && o.faction != u.faction { blocked[o.pos.y][o.pos.x] = true }
+	}
+	heap: Cost_Heap
 	cost[u.pos.y][u.pos.x] = 0
-	// Dijkstra by scanning: the map is only 400 hexes.
-	for {
-		best := Hex{-1, -1}
-		best_cost := max(int)
-		for row in 0 ..< ROWS {
-			for col in 0 ..< COLS {
-				c := cost[row][col]
-				if c != UNREACHABLE && !done[row][col] && c < best_cost {
-					best = {col, row}
-					best_cost = c
-				}
-			}
-		}
-		if best.x < 0 { break }
-		done[best.y][best.x] = true
-		nbs, n := neighbours(best)
+	heap_push(&heap, {0, u.pos})
+	for heap.count > 0 {
+		e := heap_pop(&heap)
+		if e.cost > cost[e.hex.y][e.hex.x] { continue } // stale entry
+		from := terrain_at(g, e.hex)
+		nbs, n := neighbours(e.hex)
 		for nb in nbs[:n] {
-			other := unit_at(g, nb)
-			if other >= 0 && g.units[other].faction != u.faction { continue }
-			c := best_cost + TERRAIN_MOVE_COST[terrain_at(g, nb)]
+			if blocked[nb.y][nb.x] { continue }
+			c := e.cost + step_cost(from, terrain_at(g, nb))
 			old := cost[nb.y][nb.x]
-			if old == UNREACHABLE || c < old { cost[nb.y][nb.x] = c }
+			if old == UNREACHABLE || c < old {
+				cost[nb.y][nb.x] = c
+				heap_push(&heap, {c, nb})
+			}
 		}
 	}
 	return
+}
+
+// A fixed-size min-heap for movement_costs; each hex is pushed at most once per
+// improvement, and there are at most 6 improvements per hex.
+Cost_Entry :: struct {
+	cost: int,
+	hex:  Hex,
+}
+
+Cost_Heap :: struct {
+	items: [ROWS * COLS * 6 + 1]Cost_Entry,
+	count: int,
+}
+
+heap_push :: proc(h: ^Cost_Heap, e: Cost_Entry) {
+	i := h.count
+	h.items[i] = e
+	h.count += 1
+	for i > 0 {
+		parent := (i - 1) / 2
+		if h.items[parent].cost <= h.items[i].cost { break }
+		h.items[parent], h.items[i] = h.items[i], h.items[parent]
+		i = parent
+	}
+}
+
+heap_pop :: proc(h: ^Cost_Heap) -> Cost_Entry {
+	top := h.items[0]
+	h.count -= 1
+	h.items[0] = h.items[h.count]
+	i := 0
+	for {
+		l := 2 * i + 1
+		r := l + 1
+		m := i
+		if l < h.count && h.items[l].cost < h.items[m].cost { m = l }
+		if r < h.count && h.items[r].cost < h.items[m].cost { m = r }
+		if m == i { break }
+		h.items[m], h.items[i] = h.items[i], h.items[m]
+		i = m
+	}
+	return top
 }
 
 can_move :: proc(g: ^Game, unit: int, dest: Hex, costs: ^[ROWS][COLS]int) -> bool {
@@ -326,7 +381,7 @@ start_faction_turn :: proc(g: ^Game) {
 	for i in 0 ..< g.unit_count {
 		u := &g.units[i]
 		if u.faction == g.current {
-			u.moves_left = unit_type(u).move
+			u.moves_left = unit_type(u).move * HALVES_PER_POINT
 			u.attacked = false
 			u.done = false
 		}
