@@ -151,7 +151,7 @@ Unit :: struct {
 	alive:      bool,
 	moves_left: int, // in half points (HALVES_PER_POINT)
 	attacked:   bool, // has made its attack this turn
-	done:       bool, // the computer has finished with it this turn
+	done:       bool, // has ended its move this turn (by choice, or by attacking)
 }
 
 unit_type :: proc(u: ^Unit) -> ^Unit_Type {
@@ -341,14 +341,14 @@ heap_pop :: proc(h: ^Cost_Heap) -> Cost_Entry {
 
 can_move :: proc(g: ^Game, unit: int, dest: Hex, costs: ^[ROWS][COLS]int) -> bool {
 	u := &g.units[unit]
-	if !u.alive || !in_bounds(dest) || dest == u.pos { return false }
+	if !u.alive || u.done || !in_bounds(dest) || dest == u.pos { return false }
 	if unit_at(g, dest) >= 0 { return false }
 	c := costs[dest.y][dest.x]
 	return c != UNREACHABLE && c <= u.moves_left
 }
 
 move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
-	if g.winner >= 0 || g.units[unit].faction != g.current { return false }
+	if g.winner >= 0 || g.units[unit].faction != g.current || g.units[unit].done { return false }
 	costs := movement_costs(g, unit)
 	if !can_move(g, unit, dest, &costs) { return false }
 	u := &g.units[unit]
@@ -363,9 +363,33 @@ weapon_reaches :: proc(w: Weapon_Kind, distance: int) -> bool {
 	return distance >= WEAPONS[w].min_range && distance <= WEAPONS[w].max_range
 }
 
-// The weapon a unit would use at this distance: of those that reach, the one
-// with the strongest dice (the first listed on a tie).
-weapon_for_distance :: proc(ut: ^Unit_Type, distance: int) -> (best: Weapon_Kind, ok: bool) {
+// Line of sight between two hexes: blocked if forest stands on a hex strictly
+// between them (the two end hexes never block, so a unit in a forest can see and
+// be seen from outside it). A line that runs exactly along hex edges is clear if
+// either side of the edge is clear.
+line_of_sight :: proc(g: ^Game, a, b: Hex) -> bool {
+	clear_side :: proc(g: ^Game, a, b: Hex, nudge: f64) -> bool {
+		line, n := hexes_between(a, b, nudge)
+		for h in line[:n] {
+			// on a staggered map a line between edge hexes can graze just off
+			// the map; nothing grows there
+			if in_bounds(h) && terrain_at(g, h) == .Forest { return false }
+		}
+		return true
+	}
+	return clear_side(g, a, b, 1) || clear_side(g, a, b, -1)
+}
+
+// Ranged attacks (beyond 1 hex) need line of sight; melee never does.
+needs_line_of_sight :: proc(distance: int) -> bool {
+	return distance > 1
+}
+
+// The weapon a unit standing on `from` would use against a target on `to`: of
+// the weapons that reach (and, at range, can see), the one with the strongest
+// dice (the first listed on a tie).
+weapon_for :: proc(g: ^Game, ut: ^Unit_Type, from, to: Hex) -> (best: Weapon_Kind, ok: bool) {
+	distance := hex_distance(from, to)
 	for w in ut.weapons {
 		if !weapon_reaches(w, distance) { continue }
 		if !ok || dice_strength(WEAPONS[w].attack) > dice_strength(WEAPONS[best].attack) {
@@ -373,6 +397,8 @@ weapon_for_distance :: proc(ut: ^Unit_Type, distance: int) -> (best: Weapon_Kind
 			ok = true
 		}
 	}
+	// trace the line only when something reaches (it is the costly part)
+	if ok && needs_line_of_sight(distance) && !line_of_sight(g, from, to) { ok = false }
 	return
 }
 
@@ -381,7 +407,7 @@ attack_weapon :: proc(g: ^Game, attacker, target: int) -> (w: Weapon_Kind, ok: b
 	a := &g.units[attacker]
 	t := &g.units[target]
 	if !a.alive || !t.alive || a.attacked || a.faction == t.faction { return }
-	return weapon_for_distance(unit_type(a), hex_distance(a.pos, t.pos))
+	return weapon_for(g, unit_type(a), a.pos, t.pos)
 }
 
 can_attack :: proc(g: ^Game, attacker, target: int) -> bool {
@@ -412,7 +438,7 @@ Attack_Result :: struct {
 // the target rolls its defence dice; each block cancels one hit, and every hit
 // left costs the target a body point.
 attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool) {
-	if g.winner >= 0 || g.units[attacker].faction != g.current { return }
+	if g.winner >= 0 || g.units[attacker].faction != g.current || g.units[attacker].done { return }
 	weapon := attack_weapon(g, attacker, target) or_return
 	a := &g.units[attacker]
 	t := &g.units[target]
@@ -422,6 +448,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement
+	a.done = true
 	g.attacks[a.faction][weapon] += 1
 	t.body -= res.damage
 	if t.body <= 0 {
@@ -439,12 +466,22 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	return res, true
 }
 
-// True when the unit can do nothing more this turn: it has attacked (which also
-// ends movement), or it has no movement left and no enemy in range.
+// Finishes a unit's move for this turn (the player's "Finish move"): it may not
+// move or attack again until its side's next turn. Returns false if it is not
+// that side's turn or the unit has already finished.
+finish_move :: proc(g: ^Game, unit: int) -> bool {
+	u := &g.units[unit]
+	if g.winner >= 0 || !u.alive || u.faction != g.current || u.done { return false }
+	u.done = true
+	return true
+}
+
+// True when the unit's move is over for this turn: it was ended, it has
+// attacked (which ends it), or it has no movement left and no enemy in range.
 unit_finished :: proc(g: ^Game, unit: int) -> bool {
 	u := &g.units[unit]
 	if u.faction != g.current { return false }
-	if u.attacked { return true }
+	if u.done || u.attacked { return true }
 	if u.moves_left > 0 { return false }
 	for i in 0 ..< g.unit_count {
 		if can_attack(g, unit, i) { return false }
@@ -485,9 +522,19 @@ start_faction_turn :: proc(g: ^Game) {
 	}
 }
 
-// Passes play to the next faction that still has units.
-end_turn :: proc(g: ^Game) {
-	if g.winner >= 0 { return }
+// Living units of the side to move whose move is not over yet.
+units_left_to_act :: proc(g: ^Game) -> int {
+	n := 0
+	for i in 0 ..< g.unit_count {
+		if g.units[i].alive && g.units[i].faction == g.current && !unit_finished(g, i) { n += 1 }
+	}
+	return n
+}
+
+// Passes play to the next faction that still has units. Refused (false) while
+// any unit of the side to move has not ended its move.
+end_turn :: proc(g: ^Game) -> bool {
+	if g.winner >= 0 || units_left_to_act(g) > 0 { return false }
 	for _ in 0 ..< g.faction_count {
 		g.current += 1
 		if g.current >= g.faction_count {
@@ -498,4 +545,5 @@ end_turn :: proc(g: ^Game) {
 	}
 	start_faction_turn(g)
 	add_log(g, "Turn %d: %s to move", g.turn, g.factions[g.current].name)
+	return true
 }

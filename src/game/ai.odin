@@ -18,8 +18,7 @@ ai_step :: proc(g: ^Game) -> bool {
 			return true
 		}
 	}
-	end_turn(g)
-	return true
+	return end_turn(g)
 }
 
 // Plays a whole computer turn at once (tests, and fast-forward).
@@ -81,7 +80,7 @@ ai_hex_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex) -> int {
 		d := hex_distance(h, e.pos)
 		nearest = min(nearest, d)
 		if d == 1 { adjacent = true }
-		if w, ok := weapon_for_distance(ut, d); ok {
+		if w, ok := weapon_for(g, ut, h, e.pos); ok {
 			in_reach = true
 			if WEAPONS[w].max_range > 1 { ranged_shot = true }
 		}

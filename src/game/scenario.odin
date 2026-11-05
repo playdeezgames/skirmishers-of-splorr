@@ -11,6 +11,9 @@ SCENARIOS := [?]Scenario {
 	{"Kobold Skirmish", setup_kobold_skirmish},
 	{"Kobold Skirmish (computer vs computer)", setup_kobold_watch},
 	{"Kobold Battle: 20 vs 20", setup_kobold_battle},
+	{"Kobold Skirmish: 25% forest", setup_kobold_forest_25},
+	{"Kobold Skirmish: 50% forest", setup_kobold_forest_50},
+	{"Kobold Skirmish: 75% forest", setup_kobold_forest_75},
 }
 
 RED :: [3]f32{0.85, 0.25, 0.2}
@@ -42,6 +45,48 @@ generate_clumped_forest :: proc(g: ^Game, clumps, min_size, max_size: int) {
 			if g.terrain[nb.y][nb.x] == .Forest { continue }
 			g.terrain[nb.y][nb.x] = .Forest
 			cells[count] = nb
+			count += 1
+		}
+	}
+}
+
+forest_count :: proc(g: ^Game) -> int {
+	n := 0
+	for row in g.terrain { for t in row { if t == .Forest { n += 1 } } }
+	return n
+}
+
+// Grows forest clumps on open grass until `percent` of the map is forest. Road
+// and hexes with units are left alone, so call it after the road and the units.
+// Each clump starts on a random grass hex and grows to 3..12 hexes by spreading
+// to random neighbours.
+grow_forest_to :: proc(g: ^Game, percent: int) {
+	target := ROWS * COLS * percent / 100
+	open :: proc(g: ^Game, h: Hex) -> bool {
+		return g.terrain[h.y][h.x] == .Grass && unit_at(g, h) < 0
+	}
+	count := forest_count(g)
+	for count < target {
+		// a random open hex to start the clump (give up if there are none)
+		seed := Hex{-1, -1}
+		for _ in 0 ..< 1000 {
+			h := Hex{rng_int(&g.rng, COLS), rng_int(&g.rng, ROWS)}
+			if open(g, h) { seed = h; break }
+		}
+		if seed.x < 0 { break }
+		cells: [12]Hex
+		size := 3 + rng_int(&g.rng, len(cells) - 2)
+		cells[0] = seed
+		n := 1
+		g.terrain[seed.y][seed.x] = .Forest
+		count += 1
+		for tries := 0; n < size && count < target && tries < 100; tries += 1 {
+			nbs, nn := neighbours(cells[rng_int(&g.rng, n)])
+			nb := nbs[rng_int(&g.rng, nn)]
+			if !open(g, nb) { continue }
+			g.terrain[nb.y][nb.x] = .Forest
+			cells[n] = nb
+			n += 1
 			count += 1
 		}
 	}
@@ -140,3 +185,18 @@ setup_kobold_battle :: proc(g: ^Game) {
 	place_block(g, red, kinds[:], true)
 	place_block(g, blue, kinds[:], false)
 }
+
+// The four-kobold skirmish on a map that is `percent` forest: road first, then
+// the armies on open ground, then forest clumps until the share is reached.
+setup_kobold_forest :: proc(g: ^Game, percent: int) {
+	for &row in g.terrain { for &t in row { t = .Grass } }
+	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
+	red := add_faction(g, "Red", .Human, RED)
+	blue := add_faction(g, "Blue", .Computer, BLUE)
+	place_kobold_armies(g, red, blue)
+	grow_forest_to(g, percent)
+}
+
+setup_kobold_forest_25 :: proc(g: ^Game) { setup_kobold_forest(g, 25) }
+setup_kobold_forest_50 :: proc(g: ^Game) { setup_kobold_forest(g, 50) }
+setup_kobold_forest_75 :: proc(g: ^Game) { setup_kobold_forest(g, 75) }

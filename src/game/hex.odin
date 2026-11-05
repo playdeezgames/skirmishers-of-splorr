@@ -67,16 +67,42 @@ pixel_to_hex :: proc(p: [2]f32, radius: f32) -> Hex {
 	fq := (SQRT3 / 3 * x - y / 3) / radius
 	fr := (2.0 / 3.0 * y) / radius
 	fs := -fq - fr
-	q := math.round(fq)
-	r := math.round(fr)
-	s := math.round(fs)
-	dq := abs(q - fq)
-	dr := abs(r - fr)
-	ds := abs(s - fs)
+	return from_cube(cube_round({f64(fq), f64(fr), f64(fs)}))
+}
+
+// Nearest cube hex to fractional cube coordinates.
+cube_round :: proc(f: [3]f64) -> Cube {
+	q := math.round(f.x)
+	r := math.round(f.y)
+	s := math.round(f.z)
+	dq := abs(q - f.x)
+	dr := abs(r - f.y)
+	ds := abs(s - f.z)
 	if dq > dr && dq > ds {
 		q = -r - s
 	} else if dr > ds {
 		r = -q - s
 	}
-	return from_cube({int(q), int(r), -int(q) - int(r)})
+	return {int(q), int(r), -int(q) - int(r)}
+}
+
+MAX_LINE :: ROWS + COLS
+
+// The hexes strictly between a and b on the straight line joining their
+// centres. `nudge` shifts the line a hair to one side, which decides hexes the
+// line only grazes along an edge: +1 and -1 give the two choices.
+hexes_between :: proc(a, b: Hex, nudge: f64) -> (out: [MAX_LINE]Hex, n: int) {
+	ca := to_cube(a)
+	cb := to_cube(b)
+	steps := hex_distance(a, b)
+	EPS :: 1e-6
+	e := [3]f64{EPS, 2 * EPS, -3 * EPS} * nudge
+	fa := [3]f64{f64(ca.x), f64(ca.y), f64(ca.z)} + e
+	fb := [3]f64{f64(cb.x), f64(cb.y), f64(cb.z)} + e
+	for i in 1 ..< steps {
+		t := f64(i) / f64(steps)
+		out[n] = from_cube(cube_round(fa + (fb - fa) * t))
+		n += 1
+	}
+	return
 }

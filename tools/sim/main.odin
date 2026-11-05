@@ -17,8 +17,10 @@ options:
   -first W    who moves first: red, blue or alt (default alt: half each)
   -inset N    columns between each army and its map edge (default 1)
   -seed N     first seed (default 1000); game i uses seed+i
+  -forest P   make P percent of the map forest (0-90); default: the standard
+              light clumps (about 10-15%)
 Units are placed in columns of up to 10 rows, rear first: slingers nearest the
-edge, daggers in front. Maps are the usual grass, clumped forest and one road.`
+edge, daggers in front. Maps are grass, forest clumps and one road.`
 
 Army :: struct {
 	kinds: [game.MAX_UNITS / 2]game.Unit_Kind,
@@ -64,17 +66,20 @@ Totals :: struct {
 	kills:        [2][game.Weapon_Kind]int,
 }
 
-play :: proc(red, blue: ^Army, first: int, inset: int, seed: u64, t: ^Totals) {
+play :: proc(red, blue: ^Army, first, inset, forest: int, seed: u64, t: ^Totals) {
 	g: game.Game
 	g.winner = -1
 	g.turn = 1
 	g.rng = {seed}
-	game.generate_clumped_forest(&g, 9, 3, 9)
+	if forest < 0 {
+		game.generate_clumped_forest(&g, 9, 3, 9)
+	}
 	game.generate_road(&g, game.Road_Direction(game.rng_int(&g.rng, len(game.Road_Direction))))
 	game.add_faction(&g, "Red", .Computer, game.RED)
 	game.add_faction(&g, "Blue", .Computer, game.BLUE)
 	game.place_block(&g, 0, red.kinds[:red.count], true, inset)
 	game.place_block(&g, 1, blue.kinds[:blue.count], false, inset)
+	if forest >= 0 { game.grow_forest_to(&g, forest) }
 	g.current = first
 	game.start_faction_turn(&g)
 
@@ -118,7 +123,7 @@ pct :: proc(n, d: int) -> f64 { return 100 * f64(n) / f64(max(d, 1)) }
 main :: proc() {
 	args := os.args[1:]
 	positional: [dynamic]string
-	games, inset, seed := 500, 1, 1000
+	games, inset, seed, forest := 500, 1, 1000, -1
 	first_mode := "alt"
 	for i := 0; i < len(args); i += 1 {
 		a := args[i]
@@ -131,6 +136,9 @@ main :: proc() {
 			case "-n":     games, ok = strconv.parse_int(v)
 			case "-inset": inset, ok = strconv.parse_int(v)
 			case "-seed":  seed, ok = strconv.parse_int(v)
+			case "-forest":
+				forest, ok = strconv.parse_int(v)
+				ok = ok && forest >= 0 && forest <= 90
 			case "-first": first_mode = v; ok = v == "red" || v == "blue" || v == "alt"
 			case:          ok = false
 			}
@@ -151,11 +159,12 @@ main :: proc() {
 		case "blue": first = 1
 		case "alt":  first = i % 2
 		}
-		play(&red, &blue, first, inset, u64(seed + i), &t)
+		play(&red, &blue, first, inset, forest, u64(seed + i), &t)
 	}
 
 	decided := t.wins[0] + t.wins[1]
-	fmt.printfln("%s (red) vs %s (blue): %d games, first move %s, inset %d", positional[0], positional[1], games, first_mode, inset)
+	forest_text := "standard" if forest < 0 else fmt.tprintf("%d%%", forest)
+	fmt.printfln("%s (red) vs %s (blue): %d games, first move %s, inset %d, forest %s", positional[0], positional[1], games, first_mode, inset, forest_text)
 	fmt.printfln("  red wins  %5.1f%%   avg survivors %.1f of %d", pct(t.wins[0], games), f64(t.survivors[0]) / f64(max(t.wins[0], 1)), red.count)
 	fmt.printfln("  blue wins %5.1f%%   avg survivors %.1f of %d", pct(t.wins[1], games), f64(t.survivors[1]) / f64(max(t.wins[1], 1)), blue.count)
 	if t.draws > 0 { fmt.printfln("  unfinished %d", t.draws) }

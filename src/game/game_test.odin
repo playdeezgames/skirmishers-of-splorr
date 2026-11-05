@@ -162,11 +162,15 @@ test_end_turn_resets_next_faction :: proc(t: ^testing.T) {
 	b := add_unit(&g, .Kobold, 1, {10, 10})
 	g.units[b].moves_left = 0
 	g.units[b].attacked = true
-	end_turn(&g)
+	testing.expect(t, !end_turn(&g), "red's kobold has not ended its move")
+	testing.expect(t, finish_move(&g, 0))
+	testing.expect(t, end_turn(&g))
 	testing.expect_value(t, g.current, 1)
 	testing.expect_value(t, g.units[b].moves_left, 4 * HALVES_PER_POINT)
 	testing.expect(t, !g.units[b].attacked)
-	end_turn(&g)
+	testing.expect(t, !g.units[b].done)
+	finish_move(&g, b)
+	testing.expect(t, end_turn(&g))
 	testing.expect_value(t, g.current, 0)
 	testing.expect_value(t, g.turn, 2)
 }
@@ -427,4 +431,179 @@ test_four_kobold_teams_have_two_slingers :: proc(t: ^testing.T) {
 		if g.units[i].kind == .Kobold_Slinger { slingers[g.units[i].faction] += 1 }
 	}
 	testing.expect_value(t, slingers, [2]int{2, 2})
+}
+
+@(test)
+test_forest_variants :: proc(t: ^testing.T) {
+	g: Game
+	for pct, k in ([]int{25, 50, 75}) {
+		scenario := 3 + k
+		testing.expect(t, strings.contains(SCENARIOS[scenario].name, "forest"), SCENARIOS[scenario].name)
+		for seed in u64(1) ..= 30 {
+			new_game(&g, scenario, seed)
+			testing.expectf(t, forest_count(&g) == ROWS * COLS * pct / 100, "%d%% seed %d: %d forest hexes", pct, seed, forest_count(&g))
+			testing.expectf(t, road_crosses(&g, .East_West) || road_crosses(&g, .North_South), "%d%% seed %d: road broken", pct, seed)
+			for i in 0 ..< g.unit_count {
+				testing.expect(t, terrain_at(&g, g.units[i].pos) != .Forest, "units start in the open")
+			}
+			testing.expect_value(t, living_units(&g, 0), 4)
+			testing.expect_value(t, g.factions[0].controller, Controller.Human)
+		}
+	}
+}
+
+// The computer still finishes games in dense forest.
+@(test)
+test_dense_forest_games_finish :: proc(t: ^testing.T) {
+	g: Game
+	for seed in u64(1) ..= 20 {
+		new_game(&g, 5, seed)
+		g.factions[0].controller = .Computer
+		for steps := 0; g.winner < 0 && steps < 20000; steps += 1 { ai_step(&g) }
+		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
+	}
+}
+
+@(test)
+test_finish_move :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Kobold, 0, {2, 5})
+	b := add_unit(&g, .Kobold, 0, {2, 8})
+	e := add_unit(&g, .Kobold, 1, {15, 5})
+	testing.expect_value(t, units_left_to_act(&g), 2)
+	testing.expect(t, move_unit(&g, a, {3, 5}))
+	testing.expect(t, finish_move(&g, a))
+	testing.expect(t, !finish_move(&g, a), "already ended")
+	testing.expect(t, !move_unit(&g, a, {4, 5}), "no moving after ending")
+	testing.expect(t, unit_finished(&g, a))
+	testing.expect_value(t, units_left_to_act(&g), 1)
+	testing.expect(t, !end_turn(&g), "b has not ended")
+	testing.expect(t, !finish_move(&g, e), "not blue's turn")
+	testing.expect(t, finish_move(&g, b))
+	testing.expect(t, end_turn(&g))
+	testing.expect_value(t, g.current, 1)
+}
+
+@(test)
+test_attacking_ends_the_unit :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Kobold, 0, {5, 5})
+	add_unit(&g, .Kobold, 1, {6, 5})
+	add_unit(&g, .Kobold, 1, {15, 15}) // so one kill does not end the game
+	attack(&g, a, 1)
+	testing.expect(t, g.units[a].done)
+	testing.expect_value(t, units_left_to_act(&g), 0)
+	testing.expect(t, end_turn(&g))
+}
+
+// A unit with no movement left and nobody in reach is over without being ended.
+@(test)
+test_stuck_unit_counts_as_ended :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Kobold, 0, {2, 5})
+	add_unit(&g, .Kobold, 1, {15, 5})
+	g.units[a].moves_left = 0
+	testing.expect_value(t, units_left_to_act(&g), 0)
+	testing.expect(t, end_turn(&g))
+}
+
+@(test)
+test_hexes_between :: proc(t: ^testing.T) {
+	line, n := hexes_between({2, 5}, {6, 5}, 1)
+	testing.expect_value(t, n, 3)
+	for h, i in line[:n] { testing.expect_value(t, h, Hex{3 + i, 5}) }
+	_, adjacent := hexes_between({2, 5}, {3, 5}, 1)
+	testing.expect_value(t, adjacent, 0)
+	// every step of the line is one hex from the last
+	for nudge in ([]f64{1, -1}) {
+		l, m := hexes_between({1, 2}, {9, 15}, nudge)
+		prev := Hex{1, 2}
+		for h in l[:m] {
+			testing.expect_value(t, hex_distance(prev, h), 1)
+			prev = h
+		}
+		testing.expect_value(t, hex_distance(prev, {9, 15}), 1)
+	}
+}
+
+@(test)
+test_forest_blocks_slings :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	s := add_unit(&g, .Kobold_Slinger, 0, {5, 5})
+	e := add_unit(&g, .Kobold, 1, {8, 5})
+	testing.expect(t, can_attack(&g, s, e))
+	g.terrain[5][6] = .Forest // between them
+	testing.expect(t, !line_of_sight(&g, {5, 5}, {8, 5}))
+	testing.expect(t, !can_attack(&g, s, e), "forest in between blocks the sling")
+	g.terrain[5][6] = .Grass
+
+	// the end hexes do not block: shooting into or out of a forest is fine
+	g.terrain[5][8] = .Forest
+	g.terrain[5][5] = .Forest
+	testing.expect(t, can_attack(&g, s, e))
+
+	// melee ignores forest entirely
+	g.units[e].pos = {6, 5}
+	g.terrain[5][6] = .Forest
+	w, ok := attack_weapon(&g, s, e)
+	testing.expect(t, ok && w == .Dagger)
+}
+
+@(test)
+test_edge_line_needs_one_clear_side :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	// two hexes apart along a cube diagonal (2,-1,-1): the line runs exactly
+	// along the edge between the two hexes in the middle
+	a := Hex{4, 4}
+	b := from_cube(to_cube(a) + {2, -1, -1})
+	testing.expect_value(t, hex_distance(a, b), 2)
+	l1, _ := hexes_between(a, b, 1)
+	l2, _ := hexes_between(a, b, -1)
+	testing.expect(t, l1[0] != l2[0], "the line grazes an edge")
+	g.terrain[l1[0].y][l1[0].x] = .Forest
+	testing.expect(t, line_of_sight(&g, a, b), "one side clear")
+	g.terrain[l2[0].y][l2[0].x] = .Forest
+	testing.expect(t, !line_of_sight(&g, a, b), "both sides wooded")
+}
+
+@(test)
+test_ai_slinger_finds_a_clear_shot :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold, 0, {5, 10})
+	s := add_unit(&g, .Kobold_Slinger, 1, {10, 10})
+	// wood the whole ring at distance 1 from the target, except the far side
+	nbs, n := neighbours({5, 10})
+	for nb in nbs[:n] { if nb.x >= 5 { g.terrain[nb.y][nb.x] = .Forest } }
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	u := g.units[s]
+	if u.attacked {
+		testing.expect(t, line_of_sight(&g, u.pos, g.units[0].pos) || hex_distance(u.pos, g.units[0].pos) == 1, "only shoots with a clear line")
+	}
+}
+
+// Every pair of hexes within sling range, on a fully wooded map: no crash, and
+// adjacent or edge-grazing pairs behave.
+@(test)
+test_line_of_sight_everywhere :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	for &row in g.terrain { for &tr in row { tr = .Forest } }
+	for r1 in 0 ..< ROWS { for c1 in 0 ..< COLS {
+		for r2 in max(0, r1 - 3) ..< min(ROWS, r1 + 4) { for c2 in max(0, c1 - 3) ..< min(COLS, c1 + 4) {
+			a, b := Hex{c1, r1}, Hex{c2, r2}
+			d := hex_distance(a, b)
+			if d > 3 { continue }
+			los := line_of_sight(&g, a, b)
+			if d <= 1 { testing.expect(t, los, "adjacent hexes always see each other") }
+			testing.expect_value(t, line_of_sight(&g, b, a), los) // symmetric
+		} }
+	} }
 }

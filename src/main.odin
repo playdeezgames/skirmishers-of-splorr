@@ -43,8 +43,12 @@ GOLD :: Color{1, 0.85, 0.3}
 Button :: struct {
 	x, y, w, h: f32,
 }
-END_TURN_BUTTON :: Button{PANEL_X, 250, 150, 34}
-NEW_GAME_BUTTON :: Button{PANEL_X + 166, 250, 150, 34}
+FINISH_MOVE_BUTTON :: Button{PANEL_X, 250, 118, 34}
+END_TURN_BUTTON :: Button{PANEL_X + 126, 250, 118, 34}
+NEW_GAME_BUTTON :: Button{PANEL_X + 252, 250, 118, 34}
+// scenario picker, beside the scenario name: changing scenario starts a new game
+PREV_SCENARIO_BUTTON :: Button{PANEL_X, 41, 20, 18}
+NEXT_SCENARIO_BUTTON :: Button{PANEL_X + 24, 41, 20, 18}
 
 ctx: runtime.Context
 g: game.Game
@@ -104,9 +108,21 @@ mouse_click :: proc "c" (x, y: f32) {
 		start_game(scenario)
 		return
 	}
+	if in_button(PREV_SCENARIO_BUTTON, x, y) {
+		cycle_scenario(-1)
+		return
+	}
+	if in_button(NEXT_SCENARIO_BUTTON, x, y) {
+		cycle_scenario(1)
+		return
+	}
 	if !human_turn() { return }
 	if in_button(END_TURN_BUTTON, x, y) {
 		end_human_turn()
+		return
+	}
+	if in_button(FINISH_MOVE_BUTTON, x, y) {
+		finish_selected_move()
 		return
 	}
 	h := screen_to_hex(x, y)
@@ -121,7 +137,8 @@ mouse_click :: proc "c" (x, y: f32) {
 	}
 	if selected >= 0 {
 		if other >= 0 && game.can_attack(&g, selected, other) {
-			game.attack(&g, selected, other)
+			game.attack(&g, selected, other) // this ends the unit's move
+			select_next_unit()
 			return
 		}
 		if game.move_unit(&g, selected, h) { return }
@@ -129,21 +146,54 @@ mouse_click :: proc "c" (x, y: f32) {
 	selected = -1
 }
 
-end_human_turn :: proc() {
+// Selects the next of the player's units whose move is not over, after the
+// selected one (wrapping round), or nothing if all have ended.
+select_next_unit :: proc() {
+	start := max(selected, 0)
+	for k in 1 ..= g.unit_count {
+		i := (start + k) % g.unit_count
+		u := &g.units[i]
+		if u.alive && u.faction == g.current && !game.unit_finished(&g, i) {
+			selected = i
+			return
+		}
+	}
 	selected = -1
-	game.end_turn(&g)
-	ai_timer = 0
+}
+
+finish_selected_move :: proc() {
+	if selected < 0 || !human_turn() { return }
+	if game.finish_move(&g, selected) { select_next_unit() }
+}
+
+cycle_scenario :: proc(step: int) {
+	n := len(game.SCENARIOS)
+	start_game((scenario + step + n) % n)
+}
+
+// Refused by the rules while any of the player's units has not ended its move.
+end_human_turn :: proc() {
+	if game.end_turn(&g) {
+		selected = -1
+		ai_timer = 0
+	}
 }
 
 on_key :: proc(e: js.Event) {
 	if e.kind != .Key_Down || e.key.repeat { return }
 	switch e.key.key {
-	case " ", "Enter", "e", "E":
+	case " ", "Enter":
 		if human_turn() { end_human_turn() }
+	case "f", "F":
+		finish_selected_move()
 	case "Escape":
 		selected = -1
 	case "n", "N":
 		start_game(scenario)
+	case "[":
+		cycle_scenario(-1)
+	case "]":
+		cycle_scenario(1)
 	case:
 		return
 	}
@@ -257,7 +307,9 @@ draw_map :: proc() {
 draw_panel :: proc() {
 	x := PANEL_X
 	text("Skirmishers of SPLORR!!", x, 24, 20, GOLD)
-	text(game.SCENARIOS[scenario].name, x, 50, 13, GREY)
+	button(PREV_SCENARIO_BUTTON, "<", true)
+	button(NEXT_SCENARIO_BUTTON, ">", true)
+	text(game.SCENARIOS[scenario].name, x + 52, 50, 13, GREY)
 
 	f := &g.factions[g.current]
 	status: string
@@ -287,6 +339,8 @@ draw_panel :: proc() {
 		state := "may attack"
 		if u.attacked {
 			state = "attacked: done for this turn"
+		} else if u.done {
+			state = "move finished"
 		} else if game.unit_finished(&g, selected) {
 			state = "no moves left and nobody in range"
 		}
@@ -297,21 +351,35 @@ draw_panel :: proc() {
 		text("Red outline: an enemy it can attack.", x, y + 32, 13, GREY)
 		text("K: kobold (dagger). S: slinger (sling, dagger).", x, y + 48, 13, GREY)
 		text("White pip: moved. Grey: done for the turn.", x, y + 64, 13, GREY)
-		text("Space ends the turn, N starts a new game.", x, y + 80, 13, GREY)
+		text("F: finish move. Space: end turn. N: new game.", x, y + 80, 13, GREY)
 	}
 	if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)
 		cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
 		if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road))) }
-		text(fmt.tprintf("Hex %d,%d: %s (%s)", hover.x, hover.y, game.TERRAIN_NAMES[t], cost), x, 200, 13, GREY)
+		text(fmt.tprintf("Hex %d,%d: %s (%s)", hover.x, hover.y, game.TERRAIN_NAMES[t], cost), x, 210, 13, GREY)
 		if hu := game.unit_at(&g, hover); hu >= 0 {
 			u := &g.units[hu]
-			text(fmt.tprintf("%s %s, body %d", g.factions[u.faction].name, game.unit_type(u).name, u.body), x, 218, 13, g.factions[u.faction].color)
+			label := fmt.tprintf("%s %s, body %d", g.factions[u.faction].name, game.unit_type(u).name, u.body)
+			// explain a shot the selected unit cannot take because of forest
+			if selected >= 0 && u.faction != g.units[selected].faction {
+				d := game.hex_distance(g.units[selected].pos, u.pos)
+				_, reach := game.unit_reach(game.unit_type(&g.units[selected]))
+				if game.needs_line_of_sight(d) && d <= reach && !game.line_of_sight(&g, g.units[selected].pos, u.pos) {
+					label = fmt.tprintf("%s: forest blocks the shot", label)
+				}
+			}
+			text(label, x, 228, 13, g.factions[u.faction].color)
 		}
 	}
 
-	button(END_TURN_BUTTON, "End turn", human_turn())
+	left := game.units_left_to_act(&g) if human_turn() else 0
+	button(FINISH_MOVE_BUTTON, "Finish move", human_turn() && selected >= 0 && !game.unit_finished(&g, selected))
+	button(END_TURN_BUTTON, "End turn", human_turn() && left == 0)
 	button(NEW_GAME_BUTTON, "New game", true)
+	if left > 0 {
+		text(fmt.tprintf("%d unit%s still to move", left, "" if left == 1 else "s"), x + 126, 292, 11, GREY)
+	}
 
 	for i in 0 ..< g.faction_count {
 		fc := &g.factions[i]
