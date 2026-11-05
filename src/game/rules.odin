@@ -123,6 +123,7 @@ Unit_Type :: struct {
 	defense: Dice,
 	body:    int, // body points; the unit dies at 0
 	move:    int, // movement points per turn
+	points:  int, // army-building cost; set with tools/sim.sh so equal points fight about even
 }
 
 UNIT_TYPES := [Unit_Kind]Unit_Type {
@@ -133,6 +134,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		defense = {.White = 1, .Red = 0, .Black = 0},
 		body = 1,
 		move = 4,
+		points = 10,
 	},
 	.Kobold_Slinger = {
 		name = "Kobold Slinger",
@@ -141,6 +143,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		defense = {.White = 1, .Red = 0, .Black = 0},
 		body = 1,
 		move = 4,
+		points = 12, // worth about 1.2 kobolds (simulator, November 5, 2026)
 	},
 }
 
@@ -255,6 +258,16 @@ add_faction :: proc(g: ^Game, name: string, controller: Controller, color: [3]f3
 	return g.faction_count - 1
 }
 
+// Total points of a faction's living units.
+army_points :: proc(g: ^Game, faction: int) -> int {
+	n := 0
+	for i in 0 ..< g.unit_count {
+		u := &g.units[i]
+		if u.alive && u.faction == faction { n += unit_type(u).points }
+	}
+	return n
+}
+
 living_units :: proc(g: ^Game, faction: int) -> int {
 	n := 0
 	for i in 0 ..< g.unit_count {
@@ -366,21 +379,29 @@ weapon_reaches :: proc(w: Weapon_Kind, distance: int) -> bool {
 	return distance >= WEAPONS[w].min_range && distance <= WEAPONS[w].max_range
 }
 
-// Line of sight between two hexes: blocked if forest stands on a hex strictly
-// between them (the two end hexes never block, so a unit in a forest can see and
-// be seen from outside it). A line that runs exactly along hex edges is clear if
-// either side of the edge is clear.
-line_of_sight :: proc(g: ^Game, a, b: Hex) -> bool {
-	clear_side :: proc(g: ^Game, a, b: Hex, nudge: f64) -> bool {
+NO_FACTION :: -1
+
+// Line of sight between two hexes, as seen by `viewer` (a faction): blocked if
+// forest, or a living unit of a faction other than the viewer's, stands on a hex
+// strictly between them. The viewer's own side never blocks; with NO_FACTION
+// only terrain counts. The two end hexes never block, so a unit in a forest can
+// see and be seen from outside it. A line that runs exactly along hex edges is
+// clear if either side of the edge is clear.
+line_of_sight :: proc(g: ^Game, a, b: Hex, viewer := NO_FACTION) -> bool {
+	clear_side :: proc(g: ^Game, a, b: Hex, viewer: int, nudge: f64) -> bool {
 		line, n := hexes_between(a, b, nudge)
 		for h in line[:n] {
 			// on a staggered map a line between edge hexes can graze just off
-			// the map; nothing grows there
-			if in_bounds(h) && terrain_at(g, h) == .Forest { return false }
+			// the map; nothing grows there, and nobody stands there
+			if !in_bounds(h) { continue }
+			if terrain_at(g, h) == .Forest { return false }
+			if viewer != NO_FACTION {
+				if o := unit_at(g, h); o >= 0 && g.units[o].faction != viewer { return false }
+			}
 		}
 		return true
 	}
-	return clear_side(g, a, b, 1) || clear_side(g, a, b, -1)
+	return clear_side(g, a, b, viewer, 1) || clear_side(g, a, b, viewer, -1)
 }
 
 // Ranged attacks (beyond 1 hex) need line of sight; melee never does.
@@ -388,10 +409,10 @@ needs_line_of_sight :: proc(distance: int) -> bool {
 	return distance > 1
 }
 
-// The weapon a unit standing on `from` would use against a target on `to`: of
-// the weapons that reach (and, at range, can see), the one with the strongest
-// dice (the first listed on a tie).
-weapon_for :: proc(g: ^Game, ut: ^Unit_Type, from, to: Hex) -> (best: Weapon_Kind, ok: bool) {
+// The weapon a unit of `faction` standing on `from` would use against a target
+// on `to`: of the weapons that reach (and, at range, can see past forest and
+// enemies), the one with the strongest dice (the first listed on a tie).
+weapon_for :: proc(g: ^Game, ut: ^Unit_Type, faction: int, from, to: Hex) -> (best: Weapon_Kind, ok: bool) {
 	distance := hex_distance(from, to)
 	for w in ut.weapons {
 		if !weapon_reaches(w, distance) { continue }
@@ -401,7 +422,7 @@ weapon_for :: proc(g: ^Game, ut: ^Unit_Type, from, to: Hex) -> (best: Weapon_Kin
 		}
 	}
 	// trace the line only when something reaches (it is the costly part)
-	if ok && needs_line_of_sight(distance) && !line_of_sight(g, from, to) { ok = false }
+	if ok && needs_line_of_sight(distance) && !line_of_sight(g, from, to, faction) { ok = false }
 	return
 }
 
@@ -410,7 +431,7 @@ attack_weapon :: proc(g: ^Game, attacker, target: int) -> (w: Weapon_Kind, ok: b
 	a := &g.units[attacker]
 	t := &g.units[target]
 	if !a.alive || !t.alive || a.attacked || a.faction == t.faction { return }
-	return weapon_for(g, unit_type(a), a.pos, t.pos)
+	return weapon_for(g, unit_type(a), a.faction, a.pos, t.pos)
 }
 
 can_attack :: proc(g: ^Game, attacker, target: int) -> bool {

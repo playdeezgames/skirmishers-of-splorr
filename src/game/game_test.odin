@@ -339,6 +339,9 @@ test_kobold_battle :: proc(t: ^testing.T) {
 		new_game(&g, 2, seed)
 		testing.expect_value(t, living_units(&g, 0), 20)
 		testing.expect_value(t, living_units(&g, 1), 20)
+		slingers: [2]int
+		for i in 0 ..< g.unit_count { if g.units[i].kind == .Kobold_Slinger { slingers[g.units[i].faction] += 1 } }
+		testing.expect_value(t, slingers, [2]int{5, 5})
 		for steps := 0; g.winner < 0 && steps < 50000; steps += 1 {
 			ai_step(&g)
 		}
@@ -705,4 +708,40 @@ test_ai_does_not_fortify_out_of_reach :: proc(t: ^testing.T) {
 	ai_take_turn(&g)
 	testing.expect(t, !g.units[k].fortified)
 	testing.expect(t, g.units[k].pos != Hex{17, 10}, "advances instead")
+}
+
+@(test)
+test_enemies_block_slings_friends_do_not :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	s := add_unit(&g, .Kobold_Slinger, 0, {5, 5})
+	target := add_unit(&g, .Kobold, 1, {8, 5})
+	testing.expect(t, can_attack(&g, s, target))
+
+	friend := add_unit(&g, .Kobold, 0, {6, 5}) // between them
+	testing.expect(t, can_attack(&g, s, target), "own units never block")
+
+	g.units[friend].faction = 1 // now an enemy stands in the way
+	testing.expect(t, !can_attack(&g, s, target), "an enemy in between blocks")
+	testing.expect(t, line_of_sight(&g, {5, 5}, {8, 5}), "terrain alone is clear")
+	testing.expect(t, !line_of_sight(&g, {5, 5}, {8, 5}, 0))
+	testing.expect(t, line_of_sight(&g, {5, 5}, {8, 5}, 1), "blue's own unit does not block blue")
+
+	// the blocking enemy itself can still be attacked: it is adjacent, so the dagger
+	w, ok := attack_weapon(&g, s, friend)
+	testing.expect(t, ok && w == .Dagger)
+
+	// a dead unit does not block
+	g.units[friend].alive = false
+	testing.expect(t, can_attack(&g, s, target))
+}
+
+@(test)
+test_points :: proc(t: ^testing.T) {
+	testing.expect_value(t, UNIT_TYPES[.Kobold].points, 10)
+	testing.expect_value(t, UNIT_TYPES[.Kobold_Slinger].points, 12)
+	g: Game
+	new_game(&g, 0, 3) // two kobolds and two slingers a side
+	testing.expect_value(t, army_points(&g, 0), 44)
+	testing.expect_value(t, army_points(&g, 1), 44)
 }

@@ -86,7 +86,7 @@ ai_hex_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex) -> int {
 		d := hex_distance(h, e.pos)
 		nearest = min(nearest, d)
 		if d == 1 { adjacent = true }
-		if w, ok := weapon_for(g, ut, h, e.pos); ok {
+		if w, ok := weapon_for(g, ut, faction, h, e.pos); ok {
 			in_reach = true
 			if WEAPONS[w].max_range > 1 { ranged_shot = true }
 		}
@@ -115,7 +115,7 @@ ai_threatened :: proc(g: ^Game, unit: int) -> bool {
 				c := costs[row][col]
 				if c == UNREACHABLE || c > budget { continue }
 				if h != e.pos && unit_at(g, h) >= 0 { continue }
-				if _, ok := weapon_for(g, et, h, u.pos); ok { return true }
+				if _, ok := weapon_for(g, et, e.faction, h, u.pos); ok { return true }
 			}
 		}
 	}

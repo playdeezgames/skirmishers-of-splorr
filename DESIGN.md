@@ -8,16 +8,19 @@ the code as it is.
 
 - Forest on a hex between shooter and target blocks the shot. **Built.**
 - **Enemy units between shooter and target block the shot; friendly units do
-  not.**
+  not.** **Built.**
 
 ## Weapons and units
 
 - Weapon switching stays **free and automatic**: the distance picks the weapon
   (sling at 2–3, dagger at 1). **Built.**
-- **Points cost per unit type.** Kobold = 2 points. The slinger's value is set
-  with `tools/sim.sh` to make equal-points armies as close to 50/50 as
-  possible; report the value to the user before using it.
-- The 20-vs-20 computer battle becomes **15 kobolds and 5 slingers** per side.
+- **Points cost per unit type: kobold 10, slinger 12.** **Built.** The user first
+  set kobold = 2, but the simulator found a slinger worth about 1.2 kobolds (4
+  slingers ≈ 4.6 kobolds, 8 ≈ 9.6), which no whole number fits at that scale; the
+  user chose 10 and 12. Equal points then fight about even (5 slingers vs 6
+  kobolds: slingers win 48%; 10 vs 12: 47%).
+- The 20-vs-20 computer battle is **15 kobolds and 5 slingers** per side (210
+  points each; red wins 53% over 300 games). **Built.**
 
 ## Elevation
 
@@ -79,7 +82,7 @@ the code as it is.
 ## Suggested order
 
 1. README and release-standard files. **Done November 5, 2026.**
-2. Enemies block line of sight; 15k5s battle; points cost (simulator).
+2. Enemies block line of sight; 15k5s battle; points cost (simulator). **Done November 5, 2026.**
 3. Elevation.
 4. Fog of war.
 5. Computer player improvements.

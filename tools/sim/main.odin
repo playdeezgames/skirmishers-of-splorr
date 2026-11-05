@@ -166,7 +166,13 @@ main :: proc() {
 
 	decided := t.wins[0] + t.wins[1]
 	forest_text := "standard" if forest < 0 else fmt.tprintf("%d%%", forest)
-	fmt.printfln("%s (red) vs %s (blue): %d games, first move %s, inset %d, forest %s", positional[0], positional[1], games, first_mode, inset, forest_text)
+	points :: proc(a: ^Army) -> int {
+		n := 0
+		for k in a.kinds[:a.count] { n += game.UNIT_TYPES[k].points }
+		return n
+	}
+	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s",
+		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text)
 	fmt.printfln("  red wins  %5.1f%%   avg survivors %.1f of %d", pct(t.wins[0], games), f64(t.survivors[0]) / f64(max(t.wins[0], 1)), red.count)
 	fmt.printfln("  blue wins %5.1f%%   avg survivors %.1f of %d", pct(t.wins[1], games), f64(t.survivors[1]) / f64(max(t.wins[1], 1)), blue.count)
 	if t.draws > 0 { fmt.printfln("  unfinished %d", t.draws) }

@@ -181,7 +181,10 @@ setup_kobold_battle :: proc(g: ^Game) {
 	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
 	red := add_faction(g, "Red", .Computer, RED)
 	blue := add_faction(g, "Blue", .Computer, BLUE)
-	kinds: [20]Unit_Kind // all daggers
+	// 15 kobolds and 5 slingers a side; rear units first, so the slingers stand
+	// in the back column behind ten kobolds
+	kinds: [20]Unit_Kind
+	for i in 0 ..< 5 { kinds[i] = .Kobold_Slinger }
 	place_block(g, red, kinds[:], true)
 	place_block(g, blue, kinds[:], false)
 }

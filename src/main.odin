@@ -353,7 +353,7 @@ draw_panel :: proc() {
 	if selected >= 0 {
 		u := &g.units[selected]
 		ut := game.unit_type(u)
-		text(fmt.tprintf("%s %s", g.factions[u.faction].name, ut.name), x, y, 15)
+		text(fmt.tprintf("%s %s (%d points)", g.factions[u.faction].name, ut.name, ut.points), x, y, 15)
 		text(fmt.tprintf("Defence %s   Body %d/%d   Move %s/%d", dice_text(ut.defense), u.body, ut.body, points_text(u.moves_left), ut.move), x, y + 20, 13, GREY)
 		wy := y + 38
 		for w in ut.weapons {
@@ -393,8 +393,8 @@ draw_panel :: proc() {
 			if selected >= 0 && u.faction != g.units[selected].faction {
 				d := game.hex_distance(g.units[selected].pos, u.pos)
 				_, reach := game.unit_reach(game.unit_type(&g.units[selected]))
-				if game.needs_line_of_sight(d) && d <= reach && !game.line_of_sight(&g, g.units[selected].pos, u.pos) {
-					label = fmt.tprintf("%s: forest blocks the shot", label)
+				if game.needs_line_of_sight(d) && d <= reach && !game.line_of_sight(&g, g.units[selected].pos, u.pos, g.units[selected].faction) {
+					label = fmt.tprintf("%s: shot blocked", label)
 				}
 			}
 			text(label, x, 228, 13, g.factions[u.faction].color)
@@ -413,7 +413,7 @@ draw_panel :: proc() {
 	for i in 0 ..< g.faction_count {
 		fc := &g.factions[i]
 		who := "you" if fc.controller == .Human else "computer"
-		text(fmt.tprintf("%s (%s): %d units", fc.name, who, game.living_units(&g, i)), x, 306 + f32(i) * 18, 13, fc.color)
+		text(fmt.tprintf("%s (%s): %d units, %d points", fc.name, who, game.living_units(&g, i), game.army_points(&g, i)), x, 306 + f32(i) * 18, 13, fc.color)
 	}
 
 	text("Log", x, 356, 14, GOLD)
