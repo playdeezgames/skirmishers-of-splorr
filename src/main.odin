@@ -80,6 +80,15 @@ load_scenario :: proc "c" (n: i32) {
 	if idx >= 0 && idx < len(game.SCENARIOS) { start_game(idx) }
 }
 
+// QA hook for screenshots (?steps=N): plays up to N computer actions at once.
+@(export)
+debug_ai_steps :: proc "c" (n: i32) {
+	context = ctx
+	for _ in 0 ..< n {
+		if !game.ai_step(&g) { break }
+	}
+}
+
 human_turn :: proc() -> bool {
 	return g.winner < 0 && g.factions[g.current].controller == .Human
 }

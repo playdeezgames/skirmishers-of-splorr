@@ -14,6 +14,8 @@ A single-player hex-and-counter wargame in the browser. Each scenario sets up th
 - **Line of sight**: attacks beyond 1 hex need it (`line_of_sight` in `rules.odin`, `hexes_between` in `hex.odin`). Forest on any hex strictly between the two units blocks it; the end hexes never block, so units can shoot into and out of a forest. A line running exactly along a hex edge is clear if either side is (lines are traced twice, nudged each way). On the staggered map, lines between edge hexes can graze off-map positions, which never block. Units do not block line of sight.
 - **Not built yet:** elevation and fog of war. When fog of war is added, the AI must only see what its own side can see, not the hidden state.
 
+**`DESIGN.md` holds the user's design decisions, including ones not built yet (elevation, fog of war, points costs, enemies blocking line of sight, presentation) and the agreed order of work. Follow it over the "Not built yet" notes here.**
+
 ## Commands
 
 ```bash
@@ -23,7 +25,11 @@ tools/sim.sh 2k2s 4k -n 1000 -forest 50   # balance simulator: computer-vs-compu
 ./test.sh -define:ODIN_TEST_NAMES=game.test_dice_odds   # one test
 python3 -m http.server -d build/web 8123                # serve (wasm needs http, not file://)
 tools/pages.sh                  # size build copied into docs/ for GitHub Pages (does not commit or push)
+tools/shots.sh                  # assets/screenshots/ and assets/cover.png via headless Chrome (+ tools/make_cover.py)
+tools/ship.sh                   # itch.io zip; --push refuses until TARGET is set (no itch.io page yet). shippit.sh wraps it
 ```
+
+Release layout follows the vault's `Tech/Release standard.md`: `ITCH_DESCRIPTION.md`, `assets/cover.png` (630x500), `assets/screenshots/`, `devlog/YYYYMMDD/devlog.md`. `?steps=N` (with `?scenario=N`) plays N computer actions at load; `tools/shots.sh` uses it because headless Chrome's virtual time does not run the AI timer.
 
 **GitHub Pages** (live since November 5, 2026): https://playdeezgames.github.io/skirmishers-of-splorr/ is served from `docs/` on `main`. `docs/` is committed build output, so do not edit it by hand. To update the page, run `tools/pages.sh`, commit `docs/`, and push, but only when the user says push.
 
