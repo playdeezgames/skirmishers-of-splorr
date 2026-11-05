@@ -22,7 +22,10 @@ tools/sim.sh 2k2s 4k -n 1000 -forest 50   # balance simulator: computer-vs-compu
 ./test.sh                       # native tests of src/game
 ./test.sh -define:ODIN_TEST_NAMES=game.test_dice_odds   # one test
 python3 -m http.server -d build/web 8123                # serve (wasm needs http, not file://)
+tools/pages.sh                  # size build copied into docs/ for GitHub Pages (does not commit or push)
 ```
+
+**GitHub Pages** (live since November 5, 2026): https://playdeezgames.github.io/skirmishers-of-splorr/ is served from `docs/` on `main`. `docs/` is committed build output, so do not edit it by hand. To update the page, run `tools/pages.sh`, commit `docs/`, and push, but only when the user says push.
 
 `.claude/launch.json` defines the `skirmishers` preview server on port 8123. `?scenario=N` (1-based index into `SCENARIOS`) loads a scenario, and the page's `<` `>` buttons or `[` `]` keys cycle through them: 2 is the 4-vs-4 and 3 the 20-vs-20 computer-vs-computer battle, both useful for watching the AI and combat. Both scripts run with `-vet -strict-style`.
 
