@@ -43,9 +43,11 @@ GOLD :: Color{1, 0.85, 0.3}
 Button :: struct {
 	x, y, w, h: f32,
 }
-FINISH_MOVE_BUTTON :: Button{PANEL_X, 250, 118, 34}
-END_TURN_BUTTON :: Button{PANEL_X + 126, 250, 118, 34}
-NEW_GAME_BUTTON :: Button{PANEL_X + 252, 250, 118, 34}
+FORTIFY_BUTTON :: Button{PANEL_X, 250, 90, 34}
+FINISH_MOVE_BUTTON :: Button{PANEL_X + 94, 250, 90, 34}
+END_TURN_BUTTON :: Button{PANEL_X + 188, 250, 90, 34}
+NEW_GAME_BUTTON :: Button{PANEL_X + 282, 250, 90, 34}
+FORTIFIED_RING :: Color{0.92, 0.86, 0.7}
 // scenario picker, beside the scenario name: changing scenario starts a new game
 PREV_SCENARIO_BUTTON :: Button{PANEL_X, 41, 20, 18}
 NEXT_SCENARIO_BUTTON :: Button{PANEL_X + 24, 41, 20, 18}
@@ -125,6 +127,10 @@ mouse_click :: proc "c" (x, y: f32) {
 		finish_selected_move()
 		return
 	}
+	if in_button(FORTIFY_BUTTON, x, y) {
+		fortify_selected()
+		return
+	}
 	h := screen_to_hex(x, y)
 	if x >= PANEL_X - 4 || !game.in_bounds(h) {
 		selected = -1
@@ -161,6 +167,11 @@ select_next_unit :: proc() {
 	selected = -1
 }
 
+fortify_selected :: proc() {
+	if selected < 0 || !human_turn() { return }
+	if game.fortify(&g, selected) { select_next_unit() }
+}
+
 finish_selected_move :: proc() {
 	if selected < 0 || !human_turn() { return }
 	if game.finish_move(&g, selected) { select_next_unit() }
@@ -184,6 +195,8 @@ on_key :: proc(e: js.Event) {
 	switch e.key.key {
 	case " ", "Enter":
 		if human_turn() { end_human_turn() }
+	case "d", "D":
+		fortify_selected()
 	case "f", "F":
 		finish_selected_move()
 	case "Escape":
@@ -225,7 +238,7 @@ points_text :: proc(halves: int) -> string {
 button :: proc(b: Button, label: string, enabled: bool) {
 	bg := Color{0.25, 0.3, 0.42} if enabled else Color{0.18, 0.18, 0.22}
 	fill_rect(b.x, b.y, b.w, b.h, bg.r, bg.g, bg.b, 1)
-	text(label, b.x + b.w / 2, b.y + b.h / 2, 15, WHITE if enabled else GREY, 1)
+	text(label, b.x + b.w / 2, b.y + b.h / 2, 13, WHITE if enabled else GREY, 1)
 }
 
 @(export)
@@ -284,6 +297,10 @@ draw_map :: proc() {
 			col = col * 0.25 + Color{0.38, 0.38, 0.4}
 			letter = Color{0.75, 0.75, 0.78}
 		}
+		if u.fortified {
+			// a pale ring round the counter: defends with advantage
+			draw_hex(p.x, p.y, HEX_R * 0.86, 0, 0, 0, 0, FORTIFIED_RING.r, FORTIFIED_RING.g, FORTIFIED_RING.b, 1, 3)
+		}
 		draw_circle(p.x, p.y, HEX_R * 0.62, col.r, col.g, col.b, 0.1, 0.1, 0.1, 2)
 		text(game.unit_type(u).short[:1], p.x, p.y + 1, 13, letter, 1) // K kobold, S slinger
 		if !finished && game.unit_has_moved(&g, i) {
@@ -337,7 +354,9 @@ draw_panel :: proc() {
 			wy += 18
 		}
 		state := "may attack"
-		if u.attacked {
+		if u.fortified {
+			state = "fortified: defends with advantage"
+		} else if u.attacked {
 			state = "attacked: done for this turn"
 		} else if u.done {
 			state = "move finished"
@@ -347,11 +366,11 @@ draw_panel :: proc() {
 		text(state, x, wy, 13, GREY)
 	} else if human_turn() {
 		text("Click one of your units to select it.", x, y, 13, GREY)
-		text("Yellow hexes: where it can move.", x, y + 16, 13, GREY)
-		text("Red outline: an enemy it can attack.", x, y + 32, 13, GREY)
-		text("K: kobold (dagger). S: slinger (sling, dagger).", x, y + 48, 13, GREY)
-		text("White pip: moved. Grey: done for the turn.", x, y + 64, 13, GREY)
-		text("F: finish move. Space: end turn. N: new game.", x, y + 80, 13, GREY)
+		text("Yellow hexes: moves. Red outline: targets.", x, y + 16, 13, GREY)
+		text("K: kobold (dagger). S: slinger (sling, dagger).", x, y + 32, 13, GREY)
+		text("Pip: moved. Grey: done. Pale ring: fortified.", x, y + 48, 13, GREY)
+		text("D: fortify (before moving). F: finish move.", x, y + 64, 13, GREY)
+		text("Space: end turn. N: new game. [ ]: scenario.", x, y + 80, 13, GREY)
 	}
 	if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)
@@ -360,7 +379,7 @@ draw_panel :: proc() {
 		text(fmt.tprintf("Hex %d,%d: %s (%s)", hover.x, hover.y, game.TERRAIN_NAMES[t], cost), x, 210, 13, GREY)
 		if hu := game.unit_at(&g, hover); hu >= 0 {
 			u := &g.units[hu]
-			label := fmt.tprintf("%s %s, body %d", g.factions[u.faction].name, game.unit_type(u).name, u.body)
+			label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
 			// explain a shot the selected unit cannot take because of forest
 			if selected >= 0 && u.faction != g.units[selected].faction {
 				d := game.hex_distance(g.units[selected].pos, u.pos)
@@ -374,11 +393,12 @@ draw_panel :: proc() {
 	}
 
 	left := game.units_left_to_act(&g) if human_turn() else 0
+	button(FORTIFY_BUTTON, "Fortify", human_turn() && selected >= 0 && game.can_fortify(&g, selected))
 	button(FINISH_MOVE_BUTTON, "Finish move", human_turn() && selected >= 0 && !game.unit_finished(&g, selected))
 	button(END_TURN_BUTTON, "End turn", human_turn() && left == 0)
 	button(NEW_GAME_BUTTON, "New game", true)
 	if left > 0 {
-		text(fmt.tprintf("%d unit%s still to move", left, "" if left == 1 else "s"), x + 126, 292, 11, GREY)
+		text(fmt.tprintf("%d unit%s still to move", left, "" if left == 1 else "s"), x + 188, 292, 11, GREY)
 	}
 
 	for i in 0 ..< g.faction_count {

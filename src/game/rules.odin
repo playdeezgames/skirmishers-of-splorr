@@ -65,12 +65,13 @@ roll_die :: proc(r: ^Rng, d: Die) -> bool {
 	return rng_int(r, 6) < DIE_SCORE_SIXTHS[d]
 }
 
-// Rolls every die in the handful and counts the scores.
-roll_dice :: proc(r: ^Rng, dice: Dice) -> int {
+// Rolls every die in the handful and counts the scores. With advantage, each
+// die that fails is rolled once more.
+roll_dice :: proc(r: ^Rng, dice: Dice, advantage := false) -> int {
 	score := 0
 	for count, d in dice {
 		for _ in 0 ..< count {
-			if roll_die(r, d) { score += 1 }
+			if roll_die(r, d) || (advantage && roll_die(r, d)) { score += 1 }
 		}
 	}
 	return score
@@ -152,6 +153,7 @@ Unit :: struct {
 	moves_left: int, // in half points (HALVES_PER_POINT)
 	attacked:   bool, // has made its attack this turn
 	done:       bool, // has ended its move this turn (by choice, or by attacking)
+	fortified:  bool, // defends with advantage until its side's next turn starts
 }
 
 unit_type :: proc(u: ^Unit) -> ^Unit_Type {
@@ -199,6 +201,7 @@ Game :: struct {
 	// per faction and weapon, for balance tools
 	attacks:       [MAX_FACTIONS][Weapon_Kind]int,
 	kills:         [MAX_FACTIONS][Weapon_Kind]int,
+	fortifies:     [MAX_FACTIONS]int,
 }
 
 add_log :: proc(g: ^Game, format: string, args: ..any) {
@@ -431,6 +434,7 @@ Attack_Result :: struct {
 	blocks: int, // scores on the defence dice
 	damage: int, // body points lost
 	killed: bool,
+	fortified: bool, // the target defended with advantage
 }
 
 // Attacking also ends the attacker's movement for the turn.
@@ -444,7 +448,8 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	t := &g.units[target]
 	res.weapon = weapon
 	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack)
-	res.blocks = roll_dice(&g.rng, unit_type(t).defense)
+	res.blocks = roll_dice(&g.rng, unit_type(t).defense, advantage = t.fortified)
+	res.fortified = t.fortified
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement
@@ -460,8 +465,8 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	aname := g.factions[a.faction].name
 	tname := g.factions[t.faction].name
 	// "Red Slinger slings Blue Kobold: 1 hit 0 block, slain"
-	add_log(g, "%s %s %s %s %s: %d hit %d block, %s", aname, unit_type(a).short, WEAPONS[weapon].verb,
-		tname, unit_type(t).short, res.hits, res.blocks, "slain" if res.killed else "no harm")
+	add_log(g, "%s %s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, WEAPONS[weapon].verb,
+		tname, unit_type(t).short, " (fort)" if res.fortified else "", res.hits, res.blocks, "slain" if res.killed else "no harm")
 	check_winner(g)
 	return res, true
 }
@@ -473,6 +478,28 @@ finish_move :: proc(g: ^Game, unit: int) -> bool {
 	u := &g.units[unit]
 	if g.winner >= 0 || !u.alive || u.faction != g.current || u.done { return false }
 	u.done = true
+	return true
+}
+
+// A unit may fortify instead of doing anything else this turn: only before it
+// has moved or attacked.
+can_fortify :: proc(g: ^Game, unit: int) -> bool {
+	u := &g.units[unit]
+	return g.winner < 0 && u.alive && u.faction == g.current && !u.done && !u.attacked &&
+		u.moves_left == unit_type(u).move * HALVES_PER_POINT
+}
+
+// Fortifying is the unit's whole turn: it stays put, does not attack, and
+// defends with advantage (each failed defence die is rolled again) until its
+// side's next turn starts.
+fortify :: proc(g: ^Game, unit: int) -> bool {
+	if !can_fortify(g, unit) { return false }
+	u := &g.units[unit]
+	u.fortified = true
+	u.done = true
+	u.moves_left = 0
+	g.fortifies[u.faction] += 1
+	add_log(g, "%s %s fortifies", g.factions[u.faction].name, unit_type(u).short)
 	return true
 }
 
@@ -518,6 +545,7 @@ start_faction_turn :: proc(g: ^Game) {
 			u.moves_left = unit_type(u).move * HALVES_PER_POINT
 			u.attacked = false
 			u.done = false
+			u.fortified = false // fortifying lasts only through the enemy's turn
 		}
 	}
 }

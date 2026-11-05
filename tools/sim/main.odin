@@ -64,6 +64,7 @@ Totals :: struct {
 	blood_won:    int, // games won by the side that killed first
 	attacks:      [2][game.Weapon_Kind]int,
 	kills:        [2][game.Weapon_Kind]int,
+	fortifies:    [2]int,
 }
 
 play :: proc(red, blue: ^Army, first, inset, forest: int, seed: u64, t: ^Totals) {
@@ -111,6 +112,7 @@ play :: proc(red, blue: ^Army, first, inset, forest: int, seed: u64, t: ^Totals)
 		if first_blood == g.winner { t.blood_won += 1 }
 	}
 	for f in 0 ..< 2 {
+		t.fortifies[f] += g.fortifies[f]
 		for w in game.Weapon_Kind {
 			t.attacks[f][w] += g.attacks[f][w]
 			t.kills[f][w] += g.kills[f][w]
@@ -172,6 +174,7 @@ main :: proc() {
 	fmt.printfln("  first attack: red %.0f%%, blue %.0f%%   first kill: red %.0f%%, blue %.0f%% (that side won %.0f%%)",
 		pct(t.first_attack[0], decided), pct(t.first_attack[1], decided),
 		pct(t.first_blood[0], decided), pct(t.first_blood[1], decided), pct(t.blood_won, decided))
+	fmt.printfln("  fortifies per game: red %.2f, blue %.2f", f64(t.fortifies[0]) / f64(max(decided, 1)), f64(t.fortifies[1]) / f64(max(decided, 1)))
 	for f in 0 ..< 2 {
 		name := "red " if f == 0 else "blue"
 		for w in game.Weapon_Kind {

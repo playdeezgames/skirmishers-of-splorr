@@ -607,3 +607,102 @@ test_line_of_sight_everywhere :: proc(t: ^testing.T) {
 		} }
 	} }
 }
+
+@(test)
+test_advantage_odds :: proc(t: ^testing.T) {
+	r := Rng{99}
+	N :: 60000
+	for d in Die {
+		scores := 0
+		for _ in 0 ..< N {
+			one: Dice
+			one[d] = 1
+			scores += roll_dice(&r, one, advantage = true)
+		}
+		p := f64(DIE_SCORE_SIXTHS[d]) / 6
+		want := int(f64(N) * (1 - (1 - p) * (1 - p))) // fail twice to fail
+		testing.expectf(t, abs(scores - want) < N / 100, "%v die with advantage: %d, expected about %d", d, scores, want)
+	}
+}
+
+@(test)
+test_fortify_rules :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Kobold, 0, {5, 5})
+	b := add_unit(&g, .Kobold, 0, {5, 8})
+	e := add_unit(&g, .Kobold, 1, {6, 5})
+	add_unit(&g, .Kobold, 1, {15, 15})
+	testing.expect(t, fortify(&g, a))
+	testing.expect(t, g.units[a].fortified)
+	testing.expect(t, unit_finished(&g, a), "fortifying is the unit's turn")
+	testing.expect(t, !can_attack(&g, a, e) || g.units[a].done)
+	_, ok := attack(&g, a, e)
+	testing.expect(t, !ok, "no attack after fortifying")
+	testing.expect(t, !fortify(&g, a), "only once")
+	testing.expect(t, !fortify(&g, e), "not on the enemy's turn")
+	// moving first rules it out
+	testing.expect(t, move_unit(&g, b, {5, 9}))
+	testing.expect(t, !can_fortify(&g, b))
+	finish_move(&g, b)
+
+	// it lasts through the enemy's turn, and ends when its own side's turn starts
+	testing.expect(t, end_turn(&g))
+	testing.expect(t, g.units[a].fortified)
+	res, hit := attack(&g, e, a)
+	testing.expect(t, hit)
+	testing.expect(t, res.fortified)
+	finish_move(&g, 3)
+	testing.expect(t, end_turn(&g))
+	if g.units[a].alive {
+		testing.expect(t, !g.units[a].fortified, "worn off at the start of red's turn")
+	}
+}
+
+// White die kills: plain 1/3 * 2/3 = 22%; against a fortified white die,
+// 1/3 * (2/3)^2 = 4/27 = 15%.
+@(test)
+test_fortified_units_survive_more :: proc(t: ^testing.T) {
+	g: Game
+	kills: [2]int
+	N :: 4000
+	for fort in 0 ..< 2 {
+		for seed in u64(1) ..= N {
+			blank_game(&g, seed + 100_000 * u64(fort))
+			a := add_unit(&g, .Kobold, 0, {5, 5})
+			d := add_unit(&g, .Kobold, 1, {6, 5})
+			add_unit(&g, .Kobold, 1, {15, 15})
+			g.units[d].fortified = fort == 1
+			res, _ := attack(&g, a, d)
+			if res.killed { kills[fort] += 1 }
+		}
+	}
+	testing.expectf(t, abs(kills[0] - N * 2 / 9) < N / 40, "plain: %d kills", kills[0])
+	testing.expectf(t, abs(kills[1] - N * 4 / 27) < N / 40, "fortified: %d kills", kills[1])
+}
+
+@(test)
+test_ai_fortifies_when_outranged :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold_Slinger, 0, {5, 10})
+	k := add_unit(&g, .Kobold, 1, {11, 10}) // 6 away: cannot reach to stab, but the slinger can reach it
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	testing.expect(t, g.units[k].fortified)
+	testing.expect_value(t, g.units[k].pos, Hex{11, 10})
+}
+
+@(test)
+test_ai_does_not_fortify_out_of_reach :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold, 0, {2, 10})
+	k := add_unit(&g, .Kobold, 1, {17, 10})
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	testing.expect(t, !g.units[k].fortified)
+	testing.expect(t, g.units[k].pos != Hex{17, 10}, "advances instead")
+}

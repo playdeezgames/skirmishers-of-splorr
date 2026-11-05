@@ -60,6 +60,12 @@ ai_unit :: proc(g: ^Game, unit: int) {
 			}
 		}
 	}
+	// Nothing to attack this turn but an enemy could attack us next turn:
+	// dig in rather than walk up to it.
+	if best_score.x >= 2 && can_fortify(g, unit) && ai_threatened(g, unit) {
+		fortify(g, unit)
+		return
+	}
 	// staying costs 0, so any other best hex scores strictly better
 	if best != u.pos { move_unit(g, unit, best) }
 	if t := ai_pick_target(g, unit); t >= 0 { attack(g, unit, t) }
@@ -88,4 +94,30 @@ ai_hex_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex) -> int {
 	if ranged && ranged_shot && !adjacent { return 0 }
 	if in_reach { return 1 }
 	return 2 + nearest
+}
+
+// True if some enemy, on its next turn, could move (with its full movement,
+// around the units standing now) to a hex from which it can attack this unit.
+ai_threatened :: proc(g: ^Game, unit: int) -> bool {
+	u := &g.units[unit]
+	for i in 0 ..< g.unit_count {
+		e := &g.units[i]
+		if !e.alive || e.faction == u.faction { continue }
+		et := unit_type(e)
+		_, reach := unit_reach(et)
+		budget := et.move * HALVES_PER_POINT
+		// a road step costs 1 half point, so no enemy gets further than this
+		if hex_distance(e.pos, u.pos) > budget / ROAD_TO_ROAD_HALVES + reach { continue }
+		costs := movement_costs(g, i)
+		for row in 0 ..< ROWS {
+			for col in 0 ..< COLS {
+				h := Hex{col, row}
+				c := costs[row][col]
+				if c == UNREACHABLE || c > budget { continue }
+				if h != e.pos && unit_at(g, h) >= 0 { continue }
+				if _, ok := weapon_for(g, et, h, u.pos); ok { return true }
+			}
+		}
+	}
+	return false
 }
