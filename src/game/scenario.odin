@@ -85,16 +85,18 @@ generate_road :: proc(g: ^Game, dir: Road_Direction) -> (start, end: Hex) {
 	return
 }
 
-// Two lines of four kobolds facing each other across the map.
+// Two lines of four kobolds facing each other across the map: daggers on the
+// flanks, slingers in the middle.
 place_kobold_armies :: proc(g: ^Game, red, blue: int) {
 	rows := [4]int{6, 8, 11, 13}
-	for r in rows {
+	kinds := [4]Unit_Kind{.Kobold, .Kobold_Slinger, .Kobold_Slinger, .Kobold}
+	for r, i in rows {
 		left := Hex{2, r}
 		right := Hex{COLS - 3, r}
 		if g.terrain[left.y][left.x] == .Forest { g.terrain[left.y][left.x] = .Grass }
 		if g.terrain[right.y][right.x] == .Forest { g.terrain[right.y][right.x] = .Grass }
-		add_unit(g, .Kobold, red, left)
-		add_unit(g, .Kobold, blue, right)
+		add_unit(g, kinds[i], red, left)
+		add_unit(g, kinds[i], blue, right)
 	}
 }
 
@@ -114,19 +116,18 @@ setup_kobold_watch :: proc(g: ^Game) {
 	place_kobold_armies(g, red, blue)
 }
 
-// Two blocks of kobolds, `per_side` each, filling columns from the map edges
-// inward across the middle rows.
-place_kobold_blocks :: proc(g: ^Game, red, blue: int, per_side: int) {
+// A block of units in columns of up to 10 rows across the middle of the map,
+// starting `inset` columns in from the faction's edge (left or right). The first
+// units fill the column nearest the edge, so list rear units first.
+place_block :: proc(g: ^Game, faction: int, kinds: []Unit_Kind, left: bool, inset := 1) {
 	BLOCK_ROWS :: 10
 	first_row := (ROWS - BLOCK_ROWS) / 2
-	for i in 0 ..< per_side {
-		col := 1 + i / BLOCK_ROWS
+	for kind, i in kinds {
+		col := inset + i / BLOCK_ROWS
 		row := first_row + i % BLOCK_ROWS
-		for side in 0 ..< 2 {
-			h := Hex{col, row} if side == 0 else Hex{COLS - 1 - col, row}
-			if g.terrain[h.y][h.x] == .Forest { g.terrain[h.y][h.x] = .Grass }
-			add_unit(g, .Kobold, red if side == 0 else blue, h)
-		}
+		h := Hex{col, row} if left else Hex{COLS - 1 - col, row}
+		if g.terrain[h.y][h.x] == .Forest { g.terrain[h.y][h.x] = .Grass }
+		add_unit(g, kind, faction, h)
 	}
 }
 
@@ -135,5 +136,7 @@ setup_kobold_battle :: proc(g: ^Game) {
 	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
 	red := add_faction(g, "Red", .Computer, RED)
 	blue := add_faction(g, "Blue", .Computer, BLUE)
-	place_kobold_blocks(g, red, blue, 20)
+	kinds: [20]Unit_Kind // all daggers
+	place_block(g, red, kinds[:], true)
+	place_block(g, blue, kinds[:], false)
 }

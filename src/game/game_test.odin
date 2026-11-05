@@ -1,6 +1,7 @@
 #+build !js
 package game
 
+import "core:strings"
 import "core:testing"
 
 // A blank all-grass map with two factions and no units.
@@ -340,4 +341,90 @@ test_kobold_battle :: proc(t: ^testing.T) {
 		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
 		testing.expectf(t, g.turn < 100, "seed %d: took %d turns", seed, g.turn)
 	}
+}
+
+@(test)
+test_weapon_table :: proc(t: ^testing.T) {
+	testing.expect_value(t, WEAPONS[.Dagger].attack[.White], 1)
+	testing.expect_value(t, WEAPONS[.Dagger].min_range, 1)
+	testing.expect_value(t, WEAPONS[.Dagger].max_range, 1)
+	testing.expect_value(t, WEAPONS[.Sling].attack[.White], 1)
+	testing.expect_value(t, WEAPONS[.Sling].min_range, 2)
+	testing.expect_value(t, WEAPONS[.Sling].max_range, 3)
+	testing.expect_value(t, UNIT_TYPES[.Kobold].weapons, Weapons{.Dagger})
+	testing.expect_value(t, UNIT_TYPES[.Kobold_Slinger].weapons, Weapons{.Sling, .Dagger})
+}
+
+@(test)
+test_slinger_picks_weapon_by_range :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	s := add_unit(&g, .Kobold_Slinger, 0, {5, 5})
+	e := add_unit(&g, .Kobold, 1, {6, 5})
+	for d in 1 ..= 5 {
+		g.units[e].pos = {5 + d, 5}
+		w, ok := attack_weapon(&g, s, e)
+		switch d {
+		case 1:
+			testing.expect(t, ok && w == .Dagger, "adjacent: dagger")
+		case 2, 3:
+			testing.expect(t, ok && w == .Sling, "2-3 hexes: sling")
+		case:
+			testing.expect(t, !ok, "beyond 3: nothing")
+		}
+	}
+	// a plain kobold only has its dagger
+	k := add_unit(&g, .Kobold, 0, {5, 8})
+	g.units[e].pos = {7, 8}
+	testing.expect(t, !can_attack(&g, k, e))
+}
+
+@(test)
+test_sling_attack_logs_weapon :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	s := add_unit(&g, .Kobold_Slinger, 0, {5, 5})
+	e := add_unit(&g, .Kobold, 1, {8, 5})
+	res, ok := attack(&g, s, e)
+	testing.expect(t, ok)
+	testing.expect_value(t, res.weapon, Weapon_Kind.Sling)
+	testing.expect(t, strings.contains(log_line(&g, res.killed ? 1 : 0), "slings"), log_line(&g, 0))
+}
+
+@(test)
+test_ai_slinger_keeps_distance :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold, 0, {5, 10})
+	s := add_unit(&g, .Kobold_Slinger, 1, {10, 10}) // 5 away: one move from sling range
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	d := hex_distance(g.units[s].pos, g.units[0].pos)
+	testing.expect(t, d >= 2 && d <= 3, "moves into sling range, not adjacent")
+	testing.expect(t, g.units[s].attacked)
+}
+
+@(test)
+test_ai_slinger_steps_back_from_melee :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold, 0, {5, 10})
+	s := add_unit(&g, .Kobold_Slinger, 1, {6, 10})
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	d := hex_distance(g.units[s].pos, g.units[0].pos)
+	testing.expect(t, d >= 2 && d <= 3, "steps back to sling")
+}
+
+@(test)
+test_four_kobold_teams_have_two_slingers :: proc(t: ^testing.T) {
+	g: Game
+	new_game(&g, 0, 9)
+	slingers: [2]int
+	for i in 0 ..< g.unit_count {
+		if g.units[i].kind == .Kobold_Slinger { slingers[g.units[i].faction] += 1 }
+	}
+	testing.expect_value(t, slingers, [2]int{2, 2})
 }

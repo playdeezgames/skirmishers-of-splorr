@@ -23,7 +23,7 @@ foreign canvas {
 	draw_text :: proc(s: [^]u8, n: i32, x, y, size: f32, r, g, b: f32, align: i32) ---
 }
 
-CANVAS_W :: 1020
+CANVAS_W :: 1060
 CANVAS_H :: 580
 HEX_R :: f32(18)
 MAP_X :: f32(12) // pixel offset of the map
@@ -235,7 +235,7 @@ draw_map :: proc() {
 			letter = Color{0.75, 0.75, 0.78}
 		}
 		draw_circle(p.x, p.y, HEX_R * 0.62, col.r, col.g, col.b, 0.1, 0.1, 0.1, 2)
-		text("K", p.x, p.y + 1, 13, letter, 1)
+		text(game.unit_type(u).short[:1], p.x, p.y + 1, 13, letter, 1) // K kobold, S slinger
 		if !finished && game.unit_has_moved(&g, i) {
 			// moved but can still act: a small pip at the upper right
 			draw_circle(p.x + HEX_R * 0.5, p.y - HEX_R * 0.5, 3.5, 1, 1, 1, 0.1, 0.1, 0.1, 1)
@@ -276,21 +276,28 @@ draw_panel :: proc() {
 		u := &g.units[selected]
 		ut := game.unit_type(u)
 		text(fmt.tprintf("%s %s", g.factions[u.faction].name, ut.name), x, y, 15)
-		text(fmt.tprintf("Attack %s   Defence %s", dice_text(ut.attack), dice_text(ut.defense)), x, y + 20, 13, GREY)
-		text(fmt.tprintf("Body %d/%d   Move %s/%d   Range %d-%d", u.body, ut.body, points_text(u.moves_left), ut.move, ut.min_range, ut.max_range), x, y + 38, 13, GREY)
+		text(fmt.tprintf("Defence %s   Body %d/%d   Move %s/%d", dice_text(ut.defense), u.body, ut.body, points_text(u.moves_left), ut.move), x, y + 20, 13, GREY)
+		wy := y + 38
+		for w in ut.weapons {
+			wp := &game.WEAPONS[w]
+			reach := fmt.tprintf("range %d", wp.max_range) if wp.min_range == wp.max_range else fmt.tprintf("range %d-%d", wp.min_range, wp.max_range)
+			text(fmt.tprintf("%s: %s, %s", wp.name, dice_text(wp.attack), reach), x, wy, 13, GREY)
+			wy += 18
+		}
 		state := "may attack"
 		if u.attacked {
 			state = "attacked: done for this turn"
 		} else if game.unit_finished(&g, selected) {
 			state = "no moves left and nobody in range"
 		}
-		text(state, x, y + 56, 13, GREY)
+		text(state, x, wy, 13, GREY)
 	} else if human_turn() {
 		text("Click one of your units to select it.", x, y, 13, GREY)
-		text("Yellow hexes: where it can move.", x, y + 18, 13, GREY)
-		text("Red outline: an enemy it can attack.", x, y + 36, 13, GREY)
-		text("White pip: moved. Grey: done for the turn.", x, y + 54, 13, GREY)
-		text("Space ends the turn, N starts a new game.", x, y + 72, 13, GREY)
+		text("Yellow hexes: where it can move.", x, y + 16, 13, GREY)
+		text("Red outline: an enemy it can attack.", x, y + 32, 13, GREY)
+		text("K: kobold (dagger). S: slinger (sling, dagger).", x, y + 48, 13, GREY)
+		text("White pip: moved. Grey: done for the turn.", x, y + 64, 13, GREY)
+		text("Space ends the turn, N starts a new game.", x, y + 80, 13, GREY)
 	}
 	if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)
@@ -309,7 +316,7 @@ draw_panel :: proc() {
 	for i in 0 ..< g.faction_count {
 		fc := &g.factions[i]
 		who := "you" if fc.controller == .Human else "computer"
-		text(fmt.tprintf("%s (%s): %d kobolds", fc.name, who, game.living_units(&g, i)), x, 306 + f32(i) * 18, 13, fc.color)
+		text(fmt.tprintf("%s (%s): %d units", fc.name, who, game.living_units(&g, i)), x, 306 + f32(i) * 18, 13, fc.color)
 	}
 
 	text("Log", x, 356, 14, GOLD)

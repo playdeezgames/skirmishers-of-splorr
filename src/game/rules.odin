@@ -78,29 +78,68 @@ roll_dice :: proc(r: ^Rng, dice: Dice) -> int {
 
 // ---------------------------------------------------------------- units
 
+// ---------------------------------------------------------------- weapons
+
+// A weapon holds the attack: its dice and its range in hexes (1..1 is melee).
+Weapon_Kind :: enum u8 {
+	Dagger,
+	Sling,
+}
+
+Weapon :: struct {
+	name:      string,
+	verb:      string, // for the log: "Red Kobold stabs Blue Kobold"
+	attack:    Dice,
+	min_range: int,
+	max_range: int,
+}
+
+WEAPONS := [Weapon_Kind]Weapon {
+	.Dagger = {name = "dagger", verb = "stabs", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 1, max_range = 1},
+	.Sling  = {name = "sling", verb = "slings", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 3},
+}
+
+Weapons :: bit_set[Weapon_Kind]
+
+// Expected scores of a handful of dice, in sixths, for choosing between weapons.
+dice_strength :: proc(d: Dice) -> int {
+	total := 0
+	for count, die in d { total += count * DIE_SCORE_SIXTHS[die] }
+	return total
+}
+
+// ---------------------------------------------------------------- units
+
 Unit_Kind :: enum u8 {
 	Kobold,
+	Kobold_Slinger,
 }
 
 Unit_Type :: struct {
-	name:      string,
-	attack:    Dice,
-	defense:   Dice,
-	body:      int, // body points; the unit dies at 0
-	move:      int, // movement points per turn
-	min_range: int, // attack range in hexes; 1..1 is melee only
-	max_range: int,
+	name:    string,
+	short:   string, // for the log and the map counter
+	weapons: Weapons, // carried weapons; the one used is picked by range
+	defense: Dice,
+	body:    int, // body points; the unit dies at 0
+	move:    int, // movement points per turn
 }
 
 UNIT_TYPES := [Unit_Kind]Unit_Type {
 	.Kobold = {
 		name = "Kobold",
-		attack = {.White = 1, .Red = 0, .Black = 0},
+		short = "Kobold",
+		weapons = {.Dagger},
 		defense = {.White = 1, .Red = 0, .Black = 0},
 		body = 1,
 		move = 4,
-		min_range = 1,
-		max_range = 1,
+	},
+	.Kobold_Slinger = {
+		name = "Kobold Slinger",
+		short = "Slinger",
+		weapons = {.Sling, .Dagger},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		body = 1,
+		move = 4,
 	},
 }
 
@@ -157,6 +196,9 @@ Game :: struct {
 	log:           [LOG_LINES]Log_Line, // ring buffer, newest at log_next-1
 	log_next:      int,
 	log_count:     int,
+	// per faction and weapon, for balance tools
+	attacks:       [MAX_FACTIONS][Weapon_Kind]int,
+	kills:         [MAX_FACTIONS][Weapon_Kind]int,
 }
 
 add_log :: proc(g: ^Game, format: string, args: ..any) {
@@ -317,16 +359,48 @@ move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 
 // ---------------------------------------------------------------- combat
 
-can_attack :: proc(g: ^Game, attacker, target: int) -> bool {
+weapon_reaches :: proc(w: Weapon_Kind, distance: int) -> bool {
+	return distance >= WEAPONS[w].min_range && distance <= WEAPONS[w].max_range
+}
+
+// The weapon a unit would use at this distance: of those that reach, the one
+// with the strongest dice (the first listed on a tie).
+weapon_for_distance :: proc(ut: ^Unit_Type, distance: int) -> (best: Weapon_Kind, ok: bool) {
+	for w in ut.weapons {
+		if !weapon_reaches(w, distance) { continue }
+		if !ok || dice_strength(WEAPONS[w].attack) > dice_strength(WEAPONS[best].attack) {
+			best = w
+			ok = true
+		}
+	}
+	return
+}
+
+// The weapon the attacker would use on the target, if it can attack it now.
+attack_weapon :: proc(g: ^Game, attacker, target: int) -> (w: Weapon_Kind, ok: bool) {
 	a := &g.units[attacker]
 	t := &g.units[target]
-	if !a.alive || !t.alive || a.attacked || a.faction == t.faction { return false }
-	d := hex_distance(a.pos, t.pos)
-	at := unit_type(a)
-	return d >= at.min_range && d <= at.max_range
+	if !a.alive || !t.alive || a.attacked || a.faction == t.faction { return }
+	return weapon_for_distance(unit_type(a), hex_distance(a.pos, t.pos))
+}
+
+can_attack :: proc(g: ^Game, attacker, target: int) -> bool {
+	_, ok := attack_weapon(g, attacker, target)
+	return ok
+}
+
+// Shortest and longest reach over all of a unit type's weapons.
+unit_reach :: proc(ut: ^Unit_Type) -> (lo, hi: int) {
+	lo = max(int)
+	for w in ut.weapons {
+		lo = min(lo, WEAPONS[w].min_range)
+		hi = max(hi, WEAPONS[w].max_range)
+	}
+	return
 }
 
 Attack_Result :: struct {
+	weapon: Weapon_Kind,
 	hits:   int, // scores on the attack dice
 	blocks: int, // scores on the defence dice
 	damage: int, // body points lost
@@ -334,31 +408,33 @@ Attack_Result :: struct {
 }
 
 // Attacking also ends the attacker's movement for the turn.
-// Attacker rolls its attack dice, the target rolls its defence dice; each block
-// cancels one hit, and every hit left costs the target a body point.
+// The attacker rolls its weapon's attack dice (the weapon is picked by range),
+// the target rolls its defence dice; each block cancels one hit, and every hit
+// left costs the target a body point.
 attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool) {
 	if g.winner >= 0 || g.units[attacker].faction != g.current { return }
-	if !can_attack(g, attacker, target) { return }
+	weapon := attack_weapon(g, attacker, target) or_return
 	a := &g.units[attacker]
 	t := &g.units[target]
-	res.hits = roll_dice(&g.rng, unit_type(a).attack)
+	res.weapon = weapon
+	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack)
 	res.blocks = roll_dice(&g.rng, unit_type(t).defense)
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement
+	g.attacks[a.faction][weapon] += 1
 	t.body -= res.damage
 	if t.body <= 0 {
 		t.body = 0
 		t.alive = false
 		res.killed = true
+		g.kills[a.faction][weapon] += 1
 	}
 	aname := g.factions[a.faction].name
 	tname := g.factions[t.faction].name
-	if res.killed {
-		add_log(g, "%s %s hits %d, blocks %d: %s %s slain", aname, unit_type(a).name, res.hits, res.blocks, tname, unit_type(t).name)
-	} else {
-		add_log(g, "%s %s hits %d, blocks %d: no harm", aname, unit_type(a).name, res.hits, res.blocks)
-	}
+	// "Red Slinger slings Blue Kobold: 1 hit 0 block, slain"
+	add_log(g, "%s %s %s %s %s: %d hit %d block, %s", aname, unit_type(a).short, WEAPONS[weapon].verb,
+		tname, unit_type(t).short, res.hits, res.blocks, "slain" if res.killed else "no harm")
 	check_winner(g)
 	return res, true
 }
