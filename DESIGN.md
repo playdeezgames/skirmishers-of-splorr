@@ -124,6 +124,76 @@ What was built and what the simulator found (tactical blue vs basic red):
   screenshots use the current plain look until art arrives. Nothing ships to
   itch.io without the user saying so.
 
+## Armour and more unit types
+
+Decided November 6, 2026 (the user's answers). Nothing here is built yet. The
+numbers in the table are a **draft**, to be tuned with the simulator.
+
+- **Armour is extra defence dice.** It is gear, like weapons: every kobold has
+  its hide (1 white die), and armour adds to it: **leather +1 white, chain +1
+  red, plate +1 black.**
+- **All new units are kobolds**, so mirrored armies stay easy to balance.
+- **Gear is fixed per unit type** (as the slinger's sling and dagger are now);
+  no buying gear per unit.
+- **Champion:** an elite kobold, **just stronger** (more body points, a better
+  weapon, plate); no special rule.
+- **Kobold shaman, called a Wololo: blesses and curses.** No attack of its own.
+  Its action (ending its move, as an attack does) targets a unit in sight
+  within 3 hexes: a friend is **blessed** (advantage on its next roll, attack
+  or defence), an enemy is **cursed** (disadvantage on its next roll).
+- **Heavy infantry:** armoured, slower, harder-hitting melee.
+- **Pike: strikes first.** When an enemy moves next to a pike, the pike makes a
+  free attack before that enemy can attack.
+- **Two shooters:** a **bow** (range 2-5, outranges the sling) and a
+  **crossbow** (range 2-4, **pierces armour**: the target rolls one fewer
+  defence die).
+- **Fast scout:** high movement and long sight, weak in a fight.
+
+Draft unit table (move, sight and body as now; defence is hide plus armour;
+points to be set by the simulator so equal points fight about even):
+
+| Unit | Weapons | Armour (defence) | Body | Move | Sight |
+|---|---|---|---|---|---|
+| Kobold | dagger (1 white, 1) | none (1 white) | 1 | 4 | 5 |
+| Slinger | sling (1 white, 2-3), dagger | none (1 white) | 1 | 4 | 7 |
+| Pike | pike (1 red, 1), strikes first | leather (2 white) | 1 | 3 | 5 |
+| Heavy | axe (1 red, 1) | chain (1 white, 1 red) | 2 | 3 | 5 |
+| Archer | bow (1 white, 2-5), dagger | none (1 white) | 1 | 4 | 7 |
+| Crossbow | crossbow (1 white, 2-4, pierces), dagger | leather (2 white) | 1 | 3 | 6 |
+| Scout | dagger | none (1 white) | 1 | 6 | 8 |
+| Champion | sword (1 red, 1 white, 1) | plate (1 white, 1 black) | 3 | 4 | 6 |
+| Wololo | none: bless or curse, range 3 | none (1 white) | 1 | 4 | 6 |
+
+Proposed rule details (Claude's proposals, to confirm):
+
+- **Disadvantage** mirrors advantage: each die that scores is rolled once more
+  and counts only if it scores again. Advantage and disadvantage cancel;
+  neither stacks (one blessing, however many sources).
+- A blessing or curse lasts for **one roll**, or until the Wololo's side's next
+  turn starts, whichever comes first. A unit holds one at a time; a new one
+  replaces it.
+- **Strikes first:** once per enemy turn, when an enemy steps into a hex next
+  to the pike, the pike attacks it at once (its normal pike dice). If the
+  enemy dies, its move ends there. The pike can still act normally on its own
+  turn.
+- **Pierce:** the crossbow removes the target's best defence die (black, then
+  red, then white); a target with one die still rolls it.
+- **Units with more than 1 body point** keep their damage; no healing. The map
+  shows their body points as pips on the counter.
+- Each new type gets an Anvil sprite (counter art) and sounds where new
+  (bow, crossbow, chant).
+
+Suggested order inside this step, each priced with the simulator before the
+next:
+
+1. Armour as gear, units with more than 1 body point (pips on the map), and
+   the three plain units: heavy infantry, champion, scout.
+2. Bow and crossbow (the pierce rule).
+3. Pike (the strikes-first reaction, the first rule that acts on the other
+   side's turn; the computer must plan around it).
+4. Wololo: disadvantage, blessing and cursing, and when the computer casts.
+5. Sprites and sounds for the new types; scenarios with mixed bands.
+
 ## Suggested order
 
 1. README and release-standard files. **Done November 5, 2026.**
@@ -133,3 +203,4 @@ What was built and what the simulator found (tactical blue vs basic red):
 5. Computer player improvements. **Done November 6, 2026.**
 6. Move animation; Anvil art and sound. **Done November 6, 2026.**
 7. Tap to inspect (check on a touch-size screen).
+8. Armour and more unit types (see that section).
