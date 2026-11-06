@@ -29,10 +29,17 @@ TERRAIN_MOVE_COST := [Terrain]int {
 HALVES_PER_POINT :: 2
 ROAD_TO_ROAD_HALVES :: 1
 
+// Climbing from low ground onto high ground costs extra: a whole point, or half
+// a point when both hexes are road. Going down or along costs nothing extra.
+CLIMB_HALVES :: 2
+ROAD_CLIMB_HALVES :: 1
+
 // Cost in half points of stepping from one hex into a neighbouring one.
-step_cost :: proc(from, to: Terrain) -> int {
-	if from == .Road && to == .Road { return ROAD_TO_ROAD_HALVES }
-	return TERRAIN_MOVE_COST[to] * HALVES_PER_POINT
+step_cost :: proc(from, to: Terrain, from_high, to_high: bool) -> int {
+	road := from == .Road && to == .Road
+	cost := ROAD_TO_ROAD_HALVES if road else TERRAIN_MOVE_COST[to] * HALVES_PER_POINT
+	if to_high && !from_high { cost += ROAD_CLIMB_HALVES if road else CLIMB_HALVES }
+	return cost
 }
 
 // ---------------------------------------------------------------- dice
@@ -190,6 +197,7 @@ Log_Line :: struct {
 
 Game :: struct {
 	terrain:       [ROWS][COLS]Terrain,
+	high:          [ROWS][COLS]bool, // elevation: high ground (true) or low ground
 	units:         [MAX_UNITS]Unit,
 	unit_count:    int,
 	factions:      [MAX_FACTIONS]Faction,
@@ -219,6 +227,10 @@ add_log :: proc(g: ^Game, format: string, args: ..any) {
 log_line :: proc(g: ^Game, i: int) -> string {
 	idx := (g.log_next - 1 - i + 2 * LOG_LINES) % LOG_LINES
 	return string(g.log[idx].buf[:g.log[idx].len])
+}
+
+is_high :: proc(g: ^Game, h: Hex) -> bool {
+	return g.high[h.y][h.x]
 }
 
 terrain_at :: proc(g: ^Game, h: Hex) -> Terrain {
@@ -299,10 +311,11 @@ movement_costs :: proc(g: ^Game, unit: int) -> (cost: [ROWS][COLS]int) {
 		e := heap_pop(&heap)
 		if e.cost > cost[e.hex.y][e.hex.x] { continue } // stale entry
 		from := terrain_at(g, e.hex)
+		from_high := is_high(g, e.hex)
 		nbs, n := neighbours(e.hex)
 		for nb in nbs[:n] {
 			if blocked[nb.y][nb.x] { continue }
-			c := e.cost + step_cost(from, terrain_at(g, nb))
+			c := e.cost + step_cost(from, terrain_at(g, nb), from_high, is_high(g, nb))
 			old := cost[nb.y][nb.x]
 			if old == UNREACHABLE || c < old {
 				cost[nb.y][nb.x] = c
@@ -375,25 +388,45 @@ move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 
 // ---------------------------------------------------------------- combat
 
-weapon_reaches :: proc(w: Weapon_Kind, distance: int) -> bool {
-	return distance >= WEAPONS[w].min_range && distance <= WEAPONS[w].max_range
+// A weapon's longest reach from one hex to another: shooting from high ground
+// down onto low ground adds half again, rounded down (sling 3 -> 4). Melee
+// weapons (range 1) are unchanged.
+weapon_max_range :: proc(g: ^Game, w: Weapon_Kind, from, to: Hex) -> int {
+	r := WEAPONS[w].max_range
+	if r > 1 && is_high(g, from) && !is_high(g, to) { r = r * 3 / 2 }
+	return r
+}
+
+weapon_reaches :: proc(g: ^Game, w: Weapon_Kind, from, to: Hex) -> bool {
+	d := hex_distance(from, to)
+	return d >= WEAPONS[w].min_range && d <= weapon_max_range(g, w, from, to)
 }
 
 NO_FACTION :: -1
 
-// Line of sight between two hexes, as seen by `viewer` (a faction): blocked if
-// forest, or a living unit of a faction other than the viewer's, stands on a hex
-// strictly between them. The viewer's own side never blocks; with NO_FACTION
-// only terrain counts. The two end hexes never block, so a unit in a forest can
-// see and be seen from outside it. A line that runs exactly along hex edges is
-// clear if either side of the edge is clear.
+// Line of sight between two hexes, as seen by `viewer` (a faction). For each hex
+// strictly between them:
+//   - an obstacle is forest, or a living unit of a faction other than the
+//     viewer's (the viewer's own side never blocks; with NO_FACTION only terrain
+//     counts);
+//   - when both ends are on low ground, high ground in between blocks, and so
+//     does any obstacle;
+//   - when either end is on high ground, it sees over low ground (obstacles
+//     there do not block), but an obstacle on high ground still blocks.
+// The two end hexes never block, so a unit in a forest can see and be seen from
+// outside it. A line that runs exactly along hex edges is clear if either side
+// of the edge is clear.
 line_of_sight :: proc(g: ^Game, a, b: Hex, viewer := NO_FACTION) -> bool {
 	clear_side :: proc(g: ^Game, a, b: Hex, viewer: int, nudge: f64) -> bool {
+		ends_high := is_high(g, a) || is_high(g, b)
 		line, n := hexes_between(a, b, nudge)
 		for h in line[:n] {
 			// on a staggered map a line between edge hexes can graze just off
 			// the map; nothing grows there, and nobody stands there
 			if !in_bounds(h) { continue }
+			high := is_high(g, h)
+			if high && !ends_high { return false } // a hill between two low hexes
+			if !high && ends_high { continue } // seen over from above
 			if terrain_at(g, h) == .Forest { return false }
 			if viewer != NO_FACTION {
 				if o := unit_at(g, h); o >= 0 && g.units[o].faction != viewer { return false }
@@ -413,16 +446,21 @@ needs_line_of_sight :: proc(distance: int) -> bool {
 // on `to`: of the weapons that reach (and, at range, can see past forest and
 // enemies), the one with the strongest dice (the first listed on a tie).
 weapon_for :: proc(g: ^Game, ut: ^Unit_Type, faction: int, from, to: Hex) -> (best: Weapon_Kind, ok: bool) {
-	distance := hex_distance(from, to)
+	best, ok = weapon_in_range(g, ut, from, to)
+	// trace the line only when something reaches (it is the costly part)
+	if ok && needs_line_of_sight(hex_distance(from, to)) && !line_of_sight(g, from, to, faction) { ok = false }
+	return
+}
+
+// Like weapon_for, but ignoring line of sight.
+weapon_in_range :: proc(g: ^Game, ut: ^Unit_Type, from, to: Hex) -> (best: Weapon_Kind, ok: bool) {
 	for w in ut.weapons {
-		if !weapon_reaches(w, distance) { continue }
+		if !weapon_reaches(g, w, from, to) { continue }
 		if !ok || dice_strength(WEAPONS[w].attack) > dice_strength(WEAPONS[best].attack) {
 			best = w
 			ok = true
 		}
 	}
-	// trace the line only when something reaches (it is the costly part)
-	if ok && needs_line_of_sight(distance) && !line_of_sight(g, from, to, faction) { ok = false }
 	return
 }
 
@@ -439,7 +477,8 @@ can_attack :: proc(g: ^Game, attacker, target: int) -> bool {
 	return ok
 }
 
-// Shortest and longest reach over all of a unit type's weapons.
+// Shortest and longest reach over all of a unit type's weapons, on level ground
+// (high ground can add to the longest; see weapon_max_range).
 unit_reach :: proc(ut: ^Unit_Type) -> (lo, hi: int) {
 	lo = max(int)
 	for w in ut.weapons {
@@ -455,7 +494,22 @@ Attack_Result :: struct {
 	blocks: int, // scores on the defence dice
 	damage: int, // body points lost
 	killed: bool,
-	fortified: bool, // the target defended with advantage
+	fortified: bool, // the target was fortified
+	attack_advantage:  bool, // melee from high ground down onto low ground
+	defence_advantage: bool, // fortified, or holding high ground against melee from below
+}
+
+// High ground in melee: the higher unit has advantage, attacking down or
+// defending against an attack from below. Ranged attacks get longer reach from
+// high ground instead (weapon_max_range). Advantage never stacks: fortified on
+// a hill is still one re-roll per failed die.
+combat_advantage :: proc(g: ^Game, attacker, target: Hex, fortified: bool) -> (attack_adv, defence_adv: bool) {
+	melee := hex_distance(attacker, target) == 1
+	a_high := is_high(g, attacker)
+	t_high := is_high(g, target)
+	attack_adv = melee && a_high && !t_high
+	defence_adv = fortified || (melee && t_high && !a_high)
+	return
 }
 
 // Attacking also ends the attacker's movement for the turn.
@@ -468,9 +522,10 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	a := &g.units[attacker]
 	t := &g.units[target]
 	res.weapon = weapon
-	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack)
-	res.blocks = roll_dice(&g.rng, unit_type(t).defense, advantage = t.fortified)
 	res.fortified = t.fortified
+	res.attack_advantage, res.defence_advantage = combat_advantage(g, a.pos, t.pos, t.fortified)
+	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack, advantage = res.attack_advantage)
+	res.blocks = roll_dice(&g.rng, unit_type(t).defense, advantage = res.defence_advantage)
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement
@@ -485,9 +540,19 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	}
 	aname := g.factions[a.faction].name
 	tname := g.factions[t.faction].name
-	// "Red Slinger slings Blue Kobold: 1 hit 0 block, slain"
-	add_log(g, "%s %s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, WEAPONS[weapon].verb,
-		tname, unit_type(t).short, " (fort)" if res.fortified else "", res.hits, res.blocks, "slain" if res.killed else "no harm")
+	// "Red Kobold (high) stabs Blue Kobold (fort): 1 hit 0 block, slain"; the tags
+	// say why a side rolled with advantage
+	def_tag := ""
+	if res.defence_advantage {
+		held_high := hex_distance(a.pos, t.pos) == 1 && is_high(g, t.pos) && !is_high(g, a.pos)
+		switch {
+		case res.fortified && held_high: def_tag = " (fort, high)"
+		case res.fortified:              def_tag = " (fort)"
+		case:                            def_tag = " (high)"
+		}
+	}
+	add_log(g, "%s %s%s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, " (high)" if res.attack_advantage else "",
+		WEAPONS[weapon].verb, tname, unit_type(t).short, def_tag, res.hits, res.blocks, "slain" if res.killed else "no harm")
 	check_winner(g)
 	return res, true
 }

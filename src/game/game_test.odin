@@ -224,10 +224,10 @@ test_watch_games_finish :: proc(t: ^testing.T) {
 @(test)
 test_road_costs :: proc(t: ^testing.T) {
 	H :: HALVES_PER_POINT
-	testing.expect_value(t, step_cost(.Road, .Road), 1) // half a point
-	testing.expect_value(t, step_cost(.Grass, .Road), 1 * H)
-	testing.expect_value(t, step_cost(.Road, .Grass), 1 * H)
-	testing.expect_value(t, step_cost(.Road, .Forest), 2 * H)
+	testing.expect_value(t, step_cost(.Road, .Road, false, false), 1) // half a point
+	testing.expect_value(t, step_cost(.Grass, .Road, false, false), 1 * H)
+	testing.expect_value(t, step_cost(.Road, .Grass, false, false), 1 * H)
+	testing.expect_value(t, step_cost(.Road, .Forest, false, false), 2 * H)
 
 	g: Game
 	blank_game(&g)
@@ -744,4 +744,145 @@ test_points :: proc(t: ^testing.T) {
 	new_game(&g, 0, 3) // two kobolds and two slingers a side
 	testing.expect_value(t, army_points(&g, 0), 44)
 	testing.expect_value(t, army_points(&g, 1), 44)
+}
+
+@(test)
+test_climbing_costs :: proc(t: ^testing.T) {
+	H :: HALVES_PER_POINT
+	testing.expect_value(t, step_cost(.Grass, .Grass, false, true), 1 * H + 2) // +1 point up
+	testing.expect_value(t, step_cost(.Grass, .Forest, false, true), 2 * H + 2)
+	testing.expect_value(t, step_cost(.Road, .Road, false, true), 2) // 1/2 + 1/2
+	testing.expect_value(t, step_cost(.Road, .Grass, false, true), 1 * H + 2) // not both road
+	testing.expect_value(t, step_cost(.Grass, .Road, false, true), 1 * H + 2)
+	testing.expect_value(t, step_cost(.Grass, .Grass, true, false), 1 * H) // down: no extra
+	testing.expect_value(t, step_cost(.Grass, .Grass, true, true), 1 * H) // along: no extra
+
+	g: Game
+	blank_game(&g)
+	k := add_unit(&g, .Kobold, 0, {5, 5})
+	g.high[5][6] = true
+	g.high[5][7] = true
+	costs := movement_costs(&g, k)
+	testing.expect_value(t, costs[5][6], 2 * H) // climb
+	testing.expect_value(t, costs[5][7], 3 * H) // along the top
+	testing.expect_value(t, costs[5][8], 4 * H) // down
+}
+
+// Melee from high ground has advantage, both ways; ranged does not.
+@(test)
+test_high_ground_melee :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	low, high, far := Hex{5, 5}, Hex{6, 5}, Hex{8, 5}
+	g.high[high.y][high.x] = true
+	a, d := combat_advantage(&g, high, low, false)
+	testing.expect(t, a && !d, "attacking down")
+	a, d = combat_advantage(&g, low, high, false)
+	testing.expect(t, !a && d, "defending against an attack from below")
+	a, d = combat_advantage(&g, low, low, false)
+	testing.expect(t, !a && !d)
+	a, d = combat_advantage(&g, high, far, false)
+	testing.expect(t, !a && !d, "ranged gets no advantage")
+	a, d = combat_advantage(&g, low, high, true)
+	testing.expect(t, !a && d, "fortified on a hill: still just advantage")
+
+	// statistically: a kobold stabbing down kills 5/9 * 2/3 = 37%, up 1/3 * 4/9 = 15%
+	N :: 4000
+	kills: [2]int
+	for dir in 0 ..< 2 {
+		for seed in u64(1) ..= N {
+			blank_game(&g, seed + 50_000 * u64(dir))
+			g.high[5][6] = true
+			from := high if dir == 0 else low
+			to := low if dir == 0 else high
+			ak := add_unit(&g, .Kobold, 0, from)
+			dk := add_unit(&g, .Kobold, 1, to)
+			add_unit(&g, .Kobold, 1, {15, 15})
+			res, _ := attack(&g, ak, dk)
+			if res.killed { kills[dir] += 1 }
+		}
+	}
+	testing.expectf(t, abs(kills[0] - N * 10 / 27) < N / 40, "downhill: %d kills", kills[0])
+	testing.expectf(t, abs(kills[1] - N * 4 / 27) < N / 40, "uphill: %d kills", kills[1])
+}
+
+@(test)
+test_sling_reach_from_high_ground :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	s := add_unit(&g, .Kobold_Slinger, 0, {5, 5})
+	e := add_unit(&g, .Kobold, 1, {9, 5}) // 4 away
+	testing.expect(t, !can_attack(&g, s, e), "range 3 on level ground")
+	g.high[5][5] = true
+	testing.expect(t, can_attack(&g, s, e), "range 4 from high ground onto low")
+	g.units[e].pos = {10, 5}
+	testing.expect(t, !can_attack(&g, s, e), "not 5")
+	g.units[e].pos = {9, 5}
+	g.high[5][9] = true
+	testing.expect(t, !can_attack(&g, s, e), "no bonus against a target on high ground")
+	g.high[5][9] = false
+	g.units[e].pos = {6, 5}
+	w, ok := attack_weapon(&g, s, e)
+	testing.expect(t, ok && w == .Dagger, "minimum range unchanged")
+}
+
+@(test)
+test_high_ground_line_of_sight :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a, b, mid := Hex{5, 5}, Hex{8, 5}, Hex{6, 5}
+	testing.expect(t, line_of_sight(&g, a, b))
+	g.high[mid.y][mid.x] = true
+	testing.expect(t, !line_of_sight(&g, a, b), "a hill between two low hexes")
+	g.high[a.y][a.x] = true
+	testing.expect(t, line_of_sight(&g, a, b), "seen from the hill")
+	g.terrain[mid.y][mid.x] = .Forest
+	testing.expect(t, !line_of_sight(&g, a, b), "forest on high ground still blocks")
+	g.high[mid.y][mid.x] = false
+	testing.expect(t, line_of_sight(&g, a, b), "a high shooter sees over low forest")
+	g.high[a.y][a.x] = false
+	g.high[b.y][b.x] = true
+	testing.expect(t, line_of_sight(&g, a, b), "and so does a high target")
+	g.high[b.y][b.x] = false
+	testing.expect(t, !line_of_sight(&g, a, b), "low to low through forest")
+	g.terrain[mid.y][mid.x] = .Grass
+
+	// enemies follow the same rule as forest
+	add_unit(&g, .Kobold, 1, mid)
+	testing.expect(t, !line_of_sight(&g, a, b, 0))
+	g.high[a.y][a.x] = true
+	testing.expect(t, line_of_sight(&g, a, b, 0), "over a low enemy from high ground")
+	g.high[mid.y][mid.x] = true
+	testing.expect(t, !line_of_sight(&g, a, b, 0), "an enemy on high ground blocks")
+}
+
+@(test)
+test_hill_scenarios :: proc(t: ^testing.T) {
+	g: Game
+	for pct, k in ([]int{15, 35}) {
+		scenario := 6 + k
+		testing.expect(t, strings.contains(SCENARIOS[scenario].name, "hill"), SCENARIOS[scenario].name)
+		for seed in u64(1) ..= 30 {
+			new_game(&g, scenario, seed)
+			testing.expectf(t, high_count(&g) == ROWS * COLS * pct / 100, "%d%% seed %d: %d high hexes", pct, seed, high_count(&g))
+			testing.expect_value(t, living_units(&g, 0), 4)
+		}
+	}
+	// the older scenarios stay flat
+	for scenario in 0 ..< 6 {
+		new_game(&g, scenario, 5)
+		testing.expect_value(t, high_count(&g), 0)
+	}
+}
+
+// Computer games on hilly maps still finish.
+@(test)
+test_hilly_games_finish :: proc(t: ^testing.T) {
+	g: Game
+	for seed in u64(1) ..= 30 {
+		new_game(&g, 7, seed)
+		g.factions[0].controller = .Computer
+		for steps := 0; g.winner < 0 && steps < 20000; steps += 1 { ai_step(&g) }
+		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
+	}
 }

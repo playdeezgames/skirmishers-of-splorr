@@ -284,7 +284,10 @@ draw_map :: proc() {
 			case .Forest: fill = FOREST
 			case .Road:   fill = ROAD
 			}
+			high := game.is_high(&g, h)
+			if high { fill = fill * 0.7 + Color{0.95, 0.9, 0.7} * 0.3 } // high ground: paler, with a dark rim
 			draw_hex(p.x, p.y, HEX_R, fill.r, fill.g, fill.b, 1, 0, 0, 0, 0.25, 1)
+			if high { draw_hex(p.x, p.y, HEX_R - 1.5, 0, 0, 0, 0, 0.35, 0.27, 0.15, 0.8, 1.5) }
 			if t == .Forest {
 				text("♣", p.x - 5, p.y - 3, 11, TREE, 1)
 				text("♣", p.x + 5, p.y + 5, 11, TREE, 1)
@@ -384,16 +387,16 @@ draw_panel :: proc() {
 	if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)
 		cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
-		if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road))) }
-		text(fmt.tprintf("Hex %d,%d: %s (%s)", hover.x, hover.y, game.TERRAIN_NAMES[t], cost), x, 210, 13, GREY)
+		if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road, false, false))) }
+		text(fmt.tprintf("Hex %d,%d: %s%s (%s)", hover.x, hover.y, game.is_high(&g, hover) ? "high " : "", game.TERRAIN_NAMES[t], cost), x, 210, 13, GREY)
 		if hu := game.unit_at(&g, hover); hu >= 0 {
 			u := &g.units[hu]
 			label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
 			// explain a shot the selected unit cannot take because of forest
 			if selected >= 0 && u.faction != g.units[selected].faction {
 				d := game.hex_distance(g.units[selected].pos, u.pos)
-				_, reach := game.unit_reach(game.unit_type(&g.units[selected]))
-				if game.needs_line_of_sight(d) && d <= reach && !game.line_of_sight(&g, g.units[selected].pos, u.pos, g.units[selected].faction) {
+				_, in_range := game.weapon_in_range(&g, game.unit_type(&g.units[selected]), g.units[selected].pos, u.pos)
+				if game.needs_line_of_sight(d) && in_range && !game.line_of_sight(&g, g.units[selected].pos, u.pos, g.units[selected].faction) {
 					label = fmt.tprintf("%s: shot blocked", label)
 				}
 			}

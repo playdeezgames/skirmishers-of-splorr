@@ -12,14 +12,15 @@ A single-player hex-and-counter wargame in the browser. Each scenario sets up th
 - **Map**: 20×20 staggered ("odd-r") grid of pointy-topped hexes, where odd rows are shifted half a hex to the right.
 - **Fortify** (`fortify`, key D): only before the unit has moved or attacked, and it is the unit's whole turn. Until its side's next turn starts, the unit defends with **advantage**: each failed defence die is rolled once more (`roll_dice(..., advantage = true)`; white 1/3 → 5/9). `start_faction_turn` clears it. The AI fortifies only when it cannot attack this turn but some enemy could attack it next turn (`ai_threatened`, an exact check with that enemy's real movement costs; a distance estimate could leave both sides fortified forever). Fortified units have a pale ring on the map and "(fort)" in the combat log.
 - **Line of sight**: attacks beyond 1 hex need it (`line_of_sight` in `rules.odin`, `hexes_between` in `hex.odin`). Forest, or a living unit of another faction than the shooter's, on any hex strictly between the two units blocks it (`line_of_sight(g, a, b, viewer)`; `NO_FACTION` checks terrain only); the end hexes never block, so units can shoot into and out of a forest. A line running exactly along a hex edge is clear if either side is (lines are traced twice, nudged each way). On the staggered map, lines between edge hexes can graze off-map positions, which never block. The shooter's own side never blocks.
-- **Not built yet:** elevation and fog of war. When fog of war is added, the AI must only see what its own side can see, not the hidden state.
+- **Elevation** (`Game.high`, `is_high`): each hex is low or high, independent of terrain. Climbing onto high ground costs +1 point, or +1/2 when both hexes are road (`step_cost(from, to, from_high, to_high)`, `CLIMB_HALVES`). In melee the higher unit has advantage, attacking or defending (`combat_advantage`; advantage never stacks with fortify). A ranged weapon fired from high onto low ground has max range x1.5 rounded down (`weapon_max_range`; sling 3 -> 4). In `line_of_sight`, high ground between two low ends blocks; if either end is high, low-ground forest and enemies no longer block but high-ground ones do. `grow_hills_to(percent)` makes the "some hills" (15%) and "hilly" (35%) skirmishes; older scenarios stay flat. Drawn as paler hexes with a dark rim. The combat log tags advantage as "(high)" or "(fort)".
+- **Not built yet:** fog of war (see DESIGN.md). When fog of war is added, the AI must only see what its own side can see, not the hidden state.
 
 **`DESIGN.md` holds the user's design decisions, including ones not built yet (elevation, fog of war, points costs, enemies blocking line of sight, presentation) and the agreed order of work. Follow it over the "Not built yet" notes here.**
 
 ## Commands
 
 ```bash
-tools/sim.sh 2k2s 4k -n 1000 -forest 50   # balance simulator: computer-vs-computer battles, win rates, per-weapon kill rates (no args = usage)
+tools/sim.sh 2k2s 4k -n 1000 -forest 50 -hills 15   # balance simulator: computer-vs-computer battles, win rates, per-weapon kill rates (no args = usage)
 ./build.sh                      # odin -> build/web/game.wasm (+ index.html, odin.js); OPT=size for shipping
 ./test.sh                       # native tests of src/game
 ./test.sh -define:ODIN_TEST_NAMES=game.test_dice_odds   # one test

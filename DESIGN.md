@@ -24,6 +24,11 @@ the code as it is.
 
 ## Elevation
 
+**Built November 6, 2026** (all of the below). On the hilly map slingers gain:
+at equal points (5 slingers vs 6 kobolds) they win 48% flat, 50% at 15% hills
+and 57% at 35% hills, from range-4 shots off high ground. Mirrored armies stay
+even.
+
 - **Two levels per hex: low (0) and high (1)**, independent of terrain (a forest
   or road can be on high ground).
 - **Movement:** stepping from low to high costs **+1**, or **+½ if both hexes
@@ -83,7 +88,7 @@ the code as it is.
 
 1. README and release-standard files. **Done November 5, 2026.**
 2. Enemies block line of sight; 15k5s battle; points cost (simulator). **Done November 5, 2026.**
-3. Elevation.
+3. Elevation. **Done November 6, 2026.**
 4. Fog of war.
 5. Computer player improvements.
 6. Move animation; Anvil art and sound.

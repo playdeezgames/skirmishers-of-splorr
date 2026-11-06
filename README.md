@@ -11,6 +11,7 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 - **Dice.** Attackers roll their weapon's attack dice and defenders roll their defence dice. A white die scores on 1 in 3, a red die on 1 in 2, and a black die on 2 in 3. Each block cancels one hit, and each hit left over costs a body point. Kobolds have 1 body point.
 - **Units.** A Kobold (`K`) carries a dagger (1 white die, range 1). A Kobold Slinger (`S`) carries a sling (1 white die, range 2 to 3) and a dagger, and uses whichever reaches the target. Both defend with 1 white die and move 4. A kobold is worth 10 points and a slinger 12.
 - **Terrain.** Entering grass costs 1 movement point, forest 2 and road 1. A step from road to road costs 1/2. Forest or an enemy unit between a slinger and its target blocks the shot; your own units do not.
+- **High ground.** Pale hexes with a dark rim are high ground. Climbing onto it costs 1 extra movement point (1/2 along a road). In melee the higher unit rolls with advantage, attacking or defending. A slinger on high ground reaches 4 hexes onto low ground. Hills block shots between two low hexes, and from high ground you can shoot over low forest and enemies.
 - **Turns.** Each unit may move, then attack once. Attacking ends its move. A unit can also **Finish move** to stop early, or **Fortify** instead of moving: until your next turn, each failed defence die is rolled once more. The turn ends only when every unit has finished.
 - **Winning.** Eliminate the other side.
 
@@ -22,7 +23,7 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 
 ## Scenarios
 
-Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, and on maps that are 25, 50 or 75 percent forest. Two computer-against-computer battles: four against four, and twenty against twenty (15 kobolds and 5 slingers a side).
+Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, on maps that are 25, 50 or 75 percent forest, and on maps with some hills or hilly ones. Two computer-against-computer battles: four against four, and twenty against twenty (15 kobolds and 5 slingers a side).
 
 ## Build
 

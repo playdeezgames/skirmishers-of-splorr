@@ -14,6 +14,8 @@ SCENARIOS := [?]Scenario {
 	{"Kobold Skirmish: 25% forest", setup_kobold_forest_25},
 	{"Kobold Skirmish: 50% forest", setup_kobold_forest_50},
 	{"Kobold Skirmish: 75% forest", setup_kobold_forest_75},
+	{"Kobold Skirmish: some hills", setup_kobold_hills_15},
+	{"Kobold Skirmish: hilly", setup_kobold_hills_35},
 }
 
 RED :: [3]f32{0.85, 0.25, 0.2}
@@ -85,6 +87,42 @@ grow_forest_to :: proc(g: ^Game, percent: int) {
 			nb := nbs[rng_int(&g.rng, nn)]
 			if !open(g, nb) { continue }
 			g.terrain[nb.y][nb.x] = .Forest
+			cells[n] = nb
+			n += 1
+			count += 1
+		}
+	}
+}
+
+high_count :: proc(g: ^Game) -> int {
+	n := 0
+	for row in g.high { for h in row { if h { n += 1 } } }
+	return n
+}
+
+// Raises clumps of high ground until `percent` of the map is high. Height is
+// separate from terrain, so hills can carry forest, road or units.
+grow_hills_to :: proc(g: ^Game, percent: int) {
+	target := ROWS * COLS * percent / 100
+	count := high_count(g)
+	for count < target {
+		seed := Hex{-1, -1}
+		for _ in 0 ..< 1000 {
+			h := Hex{rng_int(&g.rng, COLS), rng_int(&g.rng, ROWS)}
+			if !is_high(g, h) { seed = h; break }
+		}
+		if seed.x < 0 { break }
+		cells: [16]Hex
+		size := 4 + rng_int(&g.rng, len(cells) - 3)
+		cells[0] = seed
+		n := 1
+		g.high[seed.y][seed.x] = true
+		count += 1
+		for tries := 0; n < size && count < target && tries < 100; tries += 1 {
+			nbs, nn := neighbours(cells[rng_int(&g.rng, n)])
+			nb := nbs[rng_int(&g.rng, nn)]
+			if is_high(g, nb) { continue }
+			g.high[nb.y][nb.x] = true
 			cells[n] = nb
 			n += 1
 			count += 1
@@ -203,3 +241,13 @@ setup_kobold_forest :: proc(g: ^Game, percent: int) {
 setup_kobold_forest_25 :: proc(g: ^Game) { setup_kobold_forest(g, 25) }
 setup_kobold_forest_50 :: proc(g: ^Game) { setup_kobold_forest(g, 50) }
 setup_kobold_forest_75 :: proc(g: ^Game) { setup_kobold_forest(g, 75) }
+
+// The four-kobold skirmish on the usual light woods and road, with `percent` of
+// the map raised as high ground.
+setup_kobold_hills :: proc(g: ^Game, percent: int) {
+	setup_kobold_skirmish(g)
+	grow_hills_to(g, percent)
+}
+
+setup_kobold_hills_15 :: proc(g: ^Game) { setup_kobold_hills(g, 15) }
+setup_kobold_hills_35 :: proc(g: ^Game) { setup_kobold_hills(g, 35) }

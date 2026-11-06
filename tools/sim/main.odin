@@ -19,6 +19,7 @@ options:
   -seed N     first seed (default 1000); game i uses seed+i
   -forest P   make P percent of the map forest (0-90); default: the standard
               light clumps (about 10-15%)
+  -hills P    raise P percent of the map as high ground (0-90; default 0)
 Units are placed in columns of up to 10 rows, rear first: slingers nearest the
 edge, daggers in front. Maps are grass, forest clumps and one road.`
 
@@ -67,7 +68,7 @@ Totals :: struct {
 	fortifies:    [2]int,
 }
 
-play :: proc(red, blue: ^Army, first, inset, forest: int, seed: u64, t: ^Totals) {
+play :: proc(red, blue: ^Army, first, inset, forest, hills: int, seed: u64, t: ^Totals) {
 	g: game.Game
 	g.winner = -1
 	g.turn = 1
@@ -81,6 +82,7 @@ play :: proc(red, blue: ^Army, first, inset, forest: int, seed: u64, t: ^Totals)
 	game.place_block(&g, 0, red.kinds[:red.count], true, inset)
 	game.place_block(&g, 1, blue.kinds[:blue.count], false, inset)
 	if forest >= 0 { game.grow_forest_to(&g, forest) }
+	if hills > 0 { game.grow_hills_to(&g, hills) }
 	g.current = first
 	game.start_faction_turn(&g)
 
@@ -125,7 +127,7 @@ pct :: proc(n, d: int) -> f64 { return 100 * f64(n) / f64(max(d, 1)) }
 main :: proc() {
 	args := os.args[1:]
 	positional: [dynamic]string
-	games, inset, seed, forest := 500, 1, 1000, -1
+	games, inset, seed, forest, hills := 500, 1, 1000, -1, 0
 	first_mode := "alt"
 	for i := 0; i < len(args); i += 1 {
 		a := args[i]
@@ -141,6 +143,9 @@ main :: proc() {
 			case "-forest":
 				forest, ok = strconv.parse_int(v)
 				ok = ok && forest >= 0 && forest <= 90
+			case "-hills":
+				hills, ok = strconv.parse_int(v)
+				ok = ok && hills >= 0 && hills <= 90
 			case "-first": first_mode = v; ok = v == "red" || v == "blue" || v == "alt"
 			case:          ok = false
 			}
@@ -161,7 +166,7 @@ main :: proc() {
 		case "blue": first = 1
 		case "alt":  first = i % 2
 		}
-		play(&red, &blue, first, inset, forest, u64(seed + i), &t)
+		play(&red, &blue, first, inset, forest, hills, u64(seed + i), &t)
 	}
 
 	decided := t.wins[0] + t.wins[1]
@@ -171,8 +176,8 @@ main :: proc() {
 		for k in a.kinds[:a.count] { n += game.UNIT_TYPES[k].points }
 		return n
 	}
-	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s",
-		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text)
+	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s, hills %d%%",
+		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text, hills)
 	fmt.printfln("  red wins  %5.1f%%   avg survivors %.1f of %d", pct(t.wins[0], games), f64(t.survivors[0]) / f64(max(t.wins[0], 1)), red.count)
 	fmt.printfln("  blue wins %5.1f%%   avg survivors %.1f of %d", pct(t.wins[1], games), f64(t.survivors[1]) / f64(max(t.wins[1], 1)), blue.count)
 	if t.draws > 0 { fmt.printfln("  unfinished %d", t.draws) }

@@ -106,8 +106,9 @@ ai_threatened :: proc(g: ^Game, unit: int) -> bool {
 		et := unit_type(e)
 		_, reach := unit_reach(et)
 		budget := et.move * HALVES_PER_POINT
-		// a road step costs 1 half point, so no enemy gets further than this
-		if hex_distance(e.pos, u.pos) > budget / ROAD_TO_ROAD_HALVES + reach { continue }
+		// a road step costs 1 half point and high ground adds half again to a
+		// ranged weapon's reach, so no enemy gets further than this
+		if hex_distance(e.pos, u.pos) > budget / ROAD_TO_ROAD_HALVES + max(reach, reach * 3 / 2) { continue }
 		costs := movement_costs(g, i)
 		for row in 0 ..< ROWS {
 			for col in 0 ..< COLS {
