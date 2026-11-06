@@ -33,41 +33,71 @@ mask_set :: proc(m: ^Hex_Mask, h: Hex) {
 
 // What a unit of one kind sees from one hex. Terrain and elevation never change
 // during a game, so each is worked out once (call clear_view_cache after
-// changing the map under units that have already looked).
-Cached_View :: struct {
-	ready:   bool,
-	in_view: Hex_Mask,
-	watched: Hex_Mask,
-}
+// changing the map under units that have already looked). The cache keeps one
+// table per sight range in use; a fifth range is worked out each time instead
+// (slower, never wrong). Only the hexes in sight are kept: which of them would
+// show a unit (`watched`) follows from the forest and the distance.
+VIEW_SLOTS :: 4
 
 clear_view_cache :: proc(g: ^Game) {
 	g.view_cache = {}
+	g.view_ready = {}
+	g.view_slots = {}
+	g.open_ready = false
 }
 
-view_from :: proc(g: ^Game, kind: Unit_Kind, from: Hex) -> ^Cached_View {
-	v := &g.view_cache[kind][from.y][from.x]
-	if v.ready { return v }
+view_from :: proc(g: ^Game, kind: Unit_Kind, from: Hex) -> Hex_Mask {
 	vision := UNIT_TYPES[kind].vision
+	slot := -1
+	for &v, i in g.view_slots {
+		if v == 0 { v = vision }
+		if v == vision {
+			slot = i
+			break
+		}
+	}
+	if slot >= 0 && mask_has(&g.view_ready[slot], from) { return g.view_cache[slot][from.y][from.x] }
+	seen: Hex_Mask
 	for row in max(0, from.y - vision) ..= min(ROWS - 1, from.y + vision) {
 		for col in max(0, from.x - vision - 1) ..= min(COLS - 1, from.x + vision + 1) {
 			h := Hex{col, row}
 			d := hex_distance(from, h)
 			if d > vision || (d > 1 && !line_of_sight(g, from, h)) { continue }
-			mask_set(&v.in_view, h)
-			if d <= FOREST_SIGHT || terrain_at(g, h) != .Forest { mask_set(&v.watched, h) }
+			mask_set(&seen, h)
 		}
 	}
-	v.ready = true
-	return v
+	if slot >= 0 {
+		g.view_cache[slot][from.y][from.x] = seen
+		mask_set(&g.view_ready[slot], from)
+	}
+	return seen
+}
+
+// Hexes that are not forest: a unit there is seen from anywhere in sight.
+open_ground :: proc(g: ^Game) -> ^Hex_Mask {
+	if !g.open_ready {
+		g.open_mask = {}
+		for row in 0 ..< ROWS {
+			for col in 0 ..< COLS {
+				if g.terrain[row][col] != .Forest { mask_set(&g.open_mask, Hex{col, row}) }
+			}
+		}
+		g.open_ready = true
+	}
+	return &g.open_mask
 }
 
 // Adds what a unit of this kind sees from `from` to faction f's view.
 look_from :: proc(g: ^Game, f: int, kind: Unit_Kind, from: Hex) {
-	v := view_from(g, kind, from)
+	seen := view_from(g, kind, from)
+	here: Hex_Mask
+	mask_set(&here, from)
+	near := mask_grow(here, FOREST_SIGHT)
+	open := open_ground(g)
 	for row in 0 ..< ROWS {
-		g.seen[f][row] |= v.in_view[row]
-		g.in_view[f][row] |= v.in_view[row]
-		g.watched[f][row] |= v.watched[row]
+		g.seen[f][row] |= seen[row]
+		g.in_view[f][row] |= seen[row]
+		g.watched[f][row] |= seen[row] & (open[row] | near[row])
 	}
 }
 

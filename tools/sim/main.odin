@@ -10,8 +10,9 @@ import "core:strings"
 import game "../../src/game"
 
 USAGE :: `usage: tools/sim.sh RED BLUE [options]
-  RED, BLUE   army: count+letter pairs, k = kobold (dagger), s = kobold slinger
-              e.g. 4k, 2k2s, 10k10s
+  RED, BLUE   army: count+letter pairs, k = kobold (dagger), s = kobold slinger,
+              h = heavy kobold (axe, chain), c = kobold champion (sword,
+              plate), r = kobold scout (runner); e.g. 4k, 2k2s, 1c2h4k
 options:
   -n GAMES    games to play (default 500)
   -first W    who moves first: red, blue or alt (default alt: half each)
@@ -40,17 +41,25 @@ parse_army :: proc(spec: string) -> (army: Army, ok: bool) {
 		switch c {
 		case '0' ..= '9':
 			n = n * 10 + int(c - '0')
-		case 'k', 's':
+		case 'k', 's', 'h', 'c', 'r':
 			if n == 0 { return }
-			counts[.Kobold if c == 'k' else .Kobold_Slinger] += n
+			kind: game.Unit_Kind
+			switch c {
+			case 'k': kind = .Kobold
+			case 's': kind = .Kobold_Slinger
+			case 'h': kind = .Heavy
+			case 'c': kind = .Champion
+			case 'r': kind = .Scout
+			}
+			counts[kind] += n
 			n = 0
 		case:
 			return
 		}
 	}
 	if n != 0 { return }
-	// rear units first: ranged, then melee
-	for kind in ([]game.Unit_Kind{.Kobold_Slinger, .Kobold}) {
+	// rear units first: ranged, then the rest, the toughest in front
+	for kind in ([]game.Unit_Kind{.Kobold_Slinger, .Scout, .Kobold, .Champion, .Heavy}) {
 		for _ in 0 ..< counts[kind] {
 			if army.count >= len(army.kinds) { return }
 			army.kinds[army.count] = kind

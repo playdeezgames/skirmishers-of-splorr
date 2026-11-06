@@ -1091,3 +1091,84 @@ test_tactical_target_choice :: proc(t: ^testing.T) {
 	g.high[10][4] = true // now it holds the high ground
 	testing.expect_value(t, ai_tactical_target(&g, k), fort)
 }
+
+// ---------------------------------------------------------------- armour and new units
+
+@(test)
+test_armour_adds_defence_dice :: proc(t: ^testing.T) {
+	testing.expect_value(t, unit_defence(&UNIT_TYPES[.Kobold]), Dice{.White = 1, .Red = 0, .Black = 0})
+	testing.expect_value(t, unit_defence(&UNIT_TYPES[.Heavy]), Dice{.White = 1, .Red = 1, .Black = 0})
+	testing.expect_value(t, unit_defence(&UNIT_TYPES[.Champion]), Dice{.White = 1, .Red = 0, .Black = 1})
+	testing.expect_value(t, UNIT_TYPES[.Heavy].body, 2)
+	testing.expect_value(t, UNIT_TYPES[.Champion].body, 3)
+	testing.expect_value(t, UNIT_TYPES[.Scout].move, 6)
+	testing.expect_value(t, UNIT_TYPES[.Scout].vision, 8)
+}
+
+@(test)
+test_armour_blocks_more :: proc(t: ^testing.T) {
+	// a champion's sword (white + red) against a kobold's hide and against plate
+	blocks := [2]int{}
+	N :: 4000
+	for kind, k in ([]Unit_Kind{.Kobold, .Champion}) {
+		for seed in u64(1) ..= N {
+			g: Game
+			blank_game(&g, seed)
+			a := add_unit(&g, .Champion, 0, {5, 5})
+			d := add_unit(&g, kind, 1, {6, 5})
+			res, ok := attack(&g, a, d)
+			testing.expect(t, ok)
+			blocks[k] += res.blocks
+		}
+	}
+	// hide: 1/3 a roll; hide and plate: 1/3 + 2/3 = 1 a roll
+	testing.expectf(t, abs(f64(blocks[0]) / N - 1.0 / 3) < 0.03, "hide blocks %v", f64(blocks[0]) / N)
+	testing.expectf(t, abs(f64(blocks[1]) / N - 1.0) < 0.05, "plate blocks %v", f64(blocks[1]) / N)
+}
+
+@(test)
+test_wounds_stay_until_dead :: proc(t: ^testing.T) {
+	g: Game
+	for seed in u64(1) ..< 500 {
+		blank_game(&g, seed)
+		a := add_unit(&g, .Champion, 0, {5, 5})
+		h := add_unit(&g, .Heavy, 1, {6, 5})
+		res, _ := attack(&g, a, h)
+		if res.damage == 1 {
+			testing.expect_value(t, g.units[h].body, 1)
+			testing.expect(t, g.units[h].alive)
+			testing.expect(t, strings.contains(log_line(&g, 0), "wounded"))
+			return
+		}
+	}
+	testing.fail_now(t, "no seed gave exactly one wound")
+}
+
+@(test)
+test_mixed_band_games_finish :: proc(t: ^testing.T) {
+	kinds := []Unit_Kind{.Kobold_Slinger, .Kobold_Slinger, .Scout, .Kobold, .Kobold, .Champion, .Heavy, .Heavy}
+	for seed in u64(1) ..= 5 {
+		g: Game
+		g.winner = -1
+		g.turn = 1
+		g.rng = {seed}
+		g.fog = true
+		add_faction(&g, "Red", .Computer, RED)
+		add_faction(&g, "Blue", .Computer, BLUE)
+		place_block(&g, 0, kinds, true)
+		place_block(&g, 1, kinds, false)
+		start_faction_turn(&g)
+		update_vision(&g, NO_FACTION)
+		for steps := 0; g.winner < 0 && steps < 50000; steps += 1 { ai_step(&g) }
+		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
+	}
+}
+
+@(test)
+test_warband_scenario :: proc(t: ^testing.T) {
+	g: Game
+	new_game(&g, len(SCENARIOS) - 1, 3)
+	testing.expect_value(t, army_points(&g, 0), 160)
+	testing.expect_value(t, army_points(&g, 1), 160)
+	testing.expect_value(t, living_units(&g, 0), 8)
+}

@@ -60,9 +60,12 @@ Ai_View :: struct {
 	is_scout:    bool,
 	scout_pos:   Hex,
 	goal:        Hex,
+	friends:     [MAX_UNITS]Hex, // where the rest of the side stands (for the scout's leash)
+	friend_count: int,
 }
 
 SCOUT_LEAD :: 2
+SCOUT_LEASH :: 4 // hexes the scout may get ahead of its nearest friend
 
 ai_view :: proc(g: ^Game, unit: int) -> (v: Ai_View) {
 	f := g.units[unit].faction
@@ -89,6 +92,12 @@ ai_view :: proc(g: ^Game, unit: int) -> (v: Ai_View) {
 	}
 	v.is_scout = scout == unit
 	v.scout_pos = g.units[scout].pos
+	for i in 0 ..< g.unit_count {
+		u := &g.units[i]
+		if i == unit || !u.alive || u.faction != f { continue }
+		v.friends[v.friend_count] = u.pos
+		v.friend_count += 1
+	}
 	// the scout's goal: the unexplored hex (else the hex out of sight) that is
 	// nearest by way of the map's middle, so scouting heads out across the map
 	centre := Hex{COLS / 2, ROWS / 2}
@@ -167,7 +176,16 @@ ai_hex_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: ^Ai_V
 	if ranged && ranged_shot && !adjacent { return 0 }
 	if in_reach { return 1 }
 	if view.spot_count == 0 {
-		if view.is_scout { return 2 + hex_distance(h, view.goal) }
+		if view.is_scout {
+			// ahead, but not so far that it meets the enemy alone
+			lag := 0
+			if view.friend_count > 0 {
+				nearest := max(int)
+				for p in view.friends[:view.friend_count] { nearest = min(nearest, hex_distance(h, p)) }
+				lag = max(0, nearest - SCOUT_LEASH)
+			}
+			return 2 + hex_distance(h, view.goal) + lag * 2
+		}
 		return 2 + abs(hex_distance(h, view.scout_pos) - SCOUT_LEAD)
 	}
 	nearest := max(int)
@@ -421,7 +439,7 @@ ai_tactical_target :: proc(g: ^Game, unit: int) -> int {
 		if !ok { continue }
 		t := &g.units[i]
 		atk_adv, def_adv := combat_advantage(g, a.pos, t.pos, t.fortified)
-		score := dice_strength(WEAPONS[w].attack) * 4 - dice_strength(unit_type(t).defense) * 4 - t.body * 8
+		score := dice_strength(WEAPONS[w].attack) * 4 - dice_strength(unit_defence(unit_type(t))) * 4 - t.body * 8
 		if def_adv { score -= 3 }
 		if atk_adv { score += 2 }
 		_, reach := unit_reach(unit_type(t))

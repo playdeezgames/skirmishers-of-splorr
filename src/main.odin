@@ -37,11 +37,17 @@ Sprite :: enum i32 {
 	Kobold,
 	Slinger,
 	Trees,
+	Heavy,
+	Champion,
+	Scout,
 }
 
 UNIT_SPRITES := [game.Unit_Kind]Sprite {
 	.Kobold         = .Kobold,
 	.Kobold_Slinger = .Slinger,
+	.Heavy          = .Heavy,
+	.Champion       = .Champion,
+	.Scout          = .Scout,
 }
 
 // Order must match SOUND_FILES in web/index.html.
@@ -489,6 +495,14 @@ draw_map :: proc() {
 		if finished { set_alpha(alpha * 0.55) }
 		blit(i32(UNIT_SPRITES[u.kind]), p.x, p.y, 2) // the kobold's dagger or the slinger's sling
 		set_alpha(alpha)
+		if most := game.unit_type(u).body; most > 1 {
+			// body points: a pip each along the bottom of the counter, dark once lost
+			for b in 0 ..< most {
+				px := p.x + (f32(b) - f32(most - 1) / 2) * 5
+				lit := b < u.body
+				draw_circle(px, p.y + HEX_R * 0.6, 2.2, 1 if lit else 0.25, 1 if lit else 0.2, 1 if lit else 0.2, 0.1, 0.1, 0.1, 1)
+			}
+		}
 		if !finished && game.unit_has_moved(&g, i) {
 			// moved but can still act: a small pip at the upper right
 			draw_circle(p.x + HEX_R * 0.5, p.y - HEX_R * 0.5, 3.5, 1, 1, 1, 0.1, 0.1, 0.1, 1)
@@ -537,8 +551,10 @@ draw_panel :: proc() {
 		u := &g.units[selected]
 		ut := game.unit_type(u)
 		text(fmt.tprintf("%s %s (%d points)", g.factions[u.faction].name, ut.name, ut.points), x, y, 15)
-		text(fmt.tprintf("Defence %s   Body %d/%d   Move %s/%d   Sight %d", dice_text(ut.defense), u.body, ut.body, points_text(u.moves_left), ut.move, ut.vision), x, y + 20, 13, GREY)
-		wy := y + 38
+		armour := "" if ut.armour == .None else fmt.tprintf(" (%s)", game.ARMOURS[ut.armour].name)
+		text(fmt.tprintf("Body %d/%d   Move %s/%d   Sight %d", u.body, ut.body, points_text(u.moves_left), ut.move, ut.vision), x, y + 18, 13, GREY)
+		text(fmt.tprintf("Defence %s%s", dice_text(game.unit_defence(ut)), armour), x, y + 34, 13, GREY)
+		wy := y + 50
 		for w in ut.weapons {
 			wp := &game.WEAPONS[w]
 			reach := fmt.tprintf("range %d", wp.max_range) if wp.min_range == wp.max_range else fmt.tprintf("range %d-%d", wp.min_range, wp.max_range)

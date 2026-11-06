@@ -92,6 +92,8 @@ roll_dice :: proc(r: ^Rng, dice: Dice, advantage := false) -> int {
 Weapon_Kind :: enum u8 {
 	Dagger,
 	Sling,
+	Axe,
+	Sword,
 }
 
 Weapon :: struct {
@@ -105,6 +107,35 @@ Weapon :: struct {
 WEAPONS := [Weapon_Kind]Weapon {
 	.Dagger = {name = "dagger", verb = "stabs", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 1, max_range = 1},
 	.Sling  = {name = "sling", verb = "slings", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 3},
+	.Axe    = {name = "axe", verb = "chops", attack = {.White = 0, .Red = 1, .Black = 0}, min_range = 1, max_range = 1},
+	.Sword  = {name = "sword", verb = "cuts", attack = {.White = 1, .Red = 1, .Black = 0}, min_range = 1, max_range = 1},
+}
+
+// ---------------------------------------------------------------- armour
+
+// Armour adds defence dice to a kobold's own hide (Unit_Type.defense).
+Armour_Kind :: enum u8 {
+	None,
+	Leather,
+	Chain,
+	Plate,
+}
+
+Armour :: struct {
+	name: string,
+	dice: Dice,
+}
+
+ARMOURS := [Armour_Kind]Armour {
+	.None    = {name = "none", dice = {}},
+	.Leather = {name = "leather", dice = {.White = 1, .Red = 0, .Black = 0}},
+	.Chain   = {name = "chain", dice = {.White = 0, .Red = 1, .Black = 0}},
+	.Plate   = {name = "plate", dice = {.White = 0, .Red = 0, .Black = 1}},
+}
+
+// Every defence die a unit of this type rolls: its hide plus its armour.
+unit_defence :: proc(ut: ^Unit_Type) -> Dice {
+	return ut.defense + ARMOURS[ut.armour].dice
 }
 
 Weapons :: bit_set[Weapon_Kind]
@@ -121,13 +152,17 @@ dice_strength :: proc(d: Dice) -> int {
 Unit_Kind :: enum u8 {
 	Kobold,
 	Kobold_Slinger,
+	Heavy,
+	Champion,
+	Scout,
 }
 
 Unit_Type :: struct {
 	name:    string,
 	short:   string, // for the log and the map counter
 	weapons: Weapons, // carried weapons; the one used is picked by range
-	defense: Dice,
+	defense: Dice, // its own hide; armour adds to it (unit_defence)
+	armour:  Armour_Kind,
 	body:    int, // body points; the unit dies at 0
 	move:    int, // movement points per turn
 	points:  int, // army-building cost; set with tools/sim.sh so equal points fight about even
@@ -154,6 +189,38 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		move = 4,
 		points = 12, // worth about 1.2 kobolds (simulator, November 5, 2026)
 		vision = 7,
+	},
+	.Heavy = {
+		name = "Heavy Kobold",
+		short = "Heavy",
+		weapons = {.Axe},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		armour = .Chain,
+		body = 2,
+		move = 3,
+		points = 25, // 2.85 kobolds in all-heavy armies, 2.5 among kobolds (simulator, November 6, 2026)
+		vision = 5,
+	},
+	.Champion = {
+		name = "Kobold Champion",
+		short = "Champion",
+		weapons = {.Sword},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		armour = .Plate,
+		body = 3,
+		move = 4,
+		points = 55, // 6 kobolds alone, a little less in a mixed band (simulator)
+		vision = 6,
+	},
+	.Scout = {
+		name = "Kobold Scout",
+		short = "Scout",
+		weapons = {.Dagger},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		body = 1,
+		move = 6,
+		points = 11, // fights as a kobold; speed and sight are worth a little (simulator: about even)
+		vision = 8,
 	},
 }
 
@@ -266,7 +333,11 @@ Game :: struct {
 	ai_reach:      [MAX_FACTIONS][MAX_UNITS]Ai_Reach, // cached per enemy
 	events:        [EVENT_RING]Event, // see push_event
 	event_count:   int,
-	view_cache:    [Unit_Kind][ROWS][COLS]Cached_View, // terrain never changes in a game
+	view_cache:    [VIEW_SLOTS][ROWS][COLS]Hex_Mask, // hexes in sight, per sight range and hex (fog.odin)
+	view_ready:    [VIEW_SLOTS]Hex_Mask, // which hexes of each table are filled in
+	view_slots:    [VIEW_SLOTS]int, // the sight range each slot holds (0: free)
+	open_mask:     Hex_Mask, // hexes that are not forest
+	open_ready:    bool,
 }
 
 add_log :: proc(g: ^Game, format: string, args: ..any) {
@@ -645,7 +716,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	res.fortified = t.fortified
 	res.attack_advantage, res.defence_advantage = combat_advantage(g, a.pos, t.pos, t.fortified)
 	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack, advantage = res.attack_advantage)
-	res.blocks = roll_dice(&g.rng, unit_type(t).defense, advantage = res.defence_advantage)
+	res.blocks = roll_dice(&g.rng, unit_defence(unit_type(t)), advantage = res.defence_advantage)
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement
@@ -676,7 +747,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 		}
 	}
 	add_log(g, "%s %s%s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, " (high)" if res.attack_advantage else "",
-		WEAPONS[weapon].verb, tname, unit_type(t).short, def_tag, res.hits, res.blocks, "slain" if res.killed else "no harm")
+		WEAPONS[weapon].verb, tname, unit_type(t).short, def_tag, res.hits, res.blocks, "slain" if res.killed else ("wounded" if res.damage > 0 else "no harm"))
 	check_winner(g)
 	return res, true
 }

@@ -187,7 +187,14 @@ Suggested order inside this step, each priced with the simulator before the
 next:
 
 1. Armour as gear, units with more than 1 body point (pips on the map), and
-   the three plain units: heavy infantry, champion, scout.
+   the three plain units: heavy infantry, champion, scout. **Built November
+   6, 2026** with the draft stats, plus the "Kobold Warband" scenario (160
+   points a side). Simulator prices: **heavy 25** (2.85 kobolds in all-heavy
+   armies but 2.5 among kobolds: 4h vs 11k 56%, 2h4k vs 9k 48%), **champion
+   55** (1c vs 6k 51%; 1c4k vs 10k 46%), **scout 11** (fights as a kobold;
+   swapping one for a kobold comes out even once the computer keeps its scout
+   within 4 hexes of a friend; before that leash it ran ahead alone and lost
+   44%). Worth depends on the mix: many cheap units get more attacks a turn.
 2. Bow and crossbow (the pierce rule).
 3. Pike (the strikes-first reaction, the first rule that acts on the other
    side's turn; the computer must plan around it).

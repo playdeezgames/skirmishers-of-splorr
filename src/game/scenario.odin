@@ -16,6 +16,7 @@ SCENARIOS := [?]Scenario {
 	{"Kobold Skirmish: 75% forest", setup_kobold_forest_75},
 	{"Kobold Skirmish: some hills", setup_kobold_hills_15},
 	{"Kobold Skirmish: hilly", setup_kobold_hills_35},
+	{"Kobold Warband", setup_kobold_warband},
 }
 
 RED :: [3]f32{0.85, 0.25, 0.2}
@@ -253,3 +254,16 @@ setup_kobold_hills :: proc(g: ^Game, percent: int) {
 
 setup_kobold_hills_15 :: proc(g: ^Game) { setup_kobold_hills(g, 15) }
 setup_kobold_hills_35 :: proc(g: ^Game) { setup_kobold_hills(g, 35) }
+
+// Eight a side, 160 points each: a champion, two heavies, two kobolds, two
+// slingers and a scout, on the usual light woods and road.
+setup_kobold_warband :: proc(g: ^Game) {
+	generate_clumped_forest(g, 9, 3, 9)
+	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
+	red := add_faction(g, "Red", .Human, RED)
+	blue := add_faction(g, "Blue", .Computer, BLUE)
+	// rear units first (place_block fills the column nearest the edge first)
+	kinds := [?]Unit_Kind{.Kobold_Slinger, .Heavy, .Kobold, .Champion, .Scout, .Kobold, .Heavy, .Kobold_Slinger}
+	place_block(g, red, kinds[:], true, 2)
+	place_block(g, blue, kinds[:], false, 2)
+}
