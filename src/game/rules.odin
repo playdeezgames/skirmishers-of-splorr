@@ -73,12 +73,19 @@ roll_die :: proc(r: ^Rng, d: Die) -> bool {
 }
 
 // Rolls every die in the handful and counts the scores. With advantage, each
-// die that fails is rolled once more.
-roll_dice :: proc(r: ^Rng, dice: Dice, advantage := false) -> int {
+// die that fails is rolled once more; with disadvantage, each die that scores
+// is rolled once more and counts only if it scores again. Having both is
+// neither.
+roll_dice :: proc(r: ^Rng, dice: Dice, advantage := false, disadvantage := false) -> int {
+	adv := advantage && !disadvantage
+	dis := disadvantage && !advantage
 	score := 0
 	for count, d in dice {
 		for _ in 0 ..< count {
-			if roll_die(r, d) || (advantage && roll_die(r, d)) { score += 1 }
+			hit := roll_die(r, d)
+			if adv && !hit { hit = roll_die(r, d) }
+			if dis && hit { hit = roll_die(r, d) }
+			if hit { score += 1 }
 		}
 	}
 	return score
@@ -183,6 +190,7 @@ Unit_Kind :: enum u8 {
 	Archer,
 	Crossbow,
 	Pike,
+	Wololo,
 }
 
 Unit_Type :: struct {
@@ -195,6 +203,7 @@ Unit_Type :: struct {
 	move:    int, // movement points per turn
 	points:  int, // army-building cost; set with tools/sim.sh so equal points fight about even
 	vision:  int, // hexes it sees under fog of war (fog.odin)
+	chants:  bool, // may bless a friend or curse an enemy (chant)
 }
 
 UNIT_TYPES := [Unit_Kind]Unit_Type {
@@ -282,6 +291,17 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		points = 20, // 4 pikes match 8 kobolds (51%); the first strike is worth a lot (simulator, November 6, 2026)
 		vision = 5,
 	},
+	.Wololo = {
+		name = "Kobold Wololo",
+		short = "Wololo",
+		weapons = {}, // no attack: it chants
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		body = 1,
+		move = 4,
+		points = 12, // a kobold's worth beside kobolds, more beside heavies (55%) and champions (61%) (simulator, November 6, 2026)
+		vision = 6,
+		chants = true,
+	},
 }
 
 Unit :: struct {
@@ -295,7 +315,19 @@ Unit :: struct {
 	done:       bool, // has ended its move this turn (by choice, or by attacking)
 	fortified:  bool, // defends with advantage until its side's next turn starts
 	reacted:    bool, // has struck first this turn (pikes; cleared whenever a turn starts)
+	boon:       Boon, // blessed or cursed by a Wololo, for its next roll
+	boon_by:    int, // the faction that chanted it; it fades when that side's turn starts
 }
+
+// A Wololo's blessing (advantage) or curse (disadvantage) on a unit's next
+// roll, attacking or defending.
+Boon :: enum u8 {
+	None,
+	Blessed,
+	Cursed,
+}
+
+CHANT_RANGE :: 3
 
 unit_type :: proc(u: ^Unit) -> ^Unit_Type {
 	return &UNIT_TYPES[u.kind]
@@ -344,6 +376,7 @@ Event_Kind :: enum u8 {
 	Move,
 	Attack,
 	Fortify,
+	Chant,
 }
 
 Event :: struct {
@@ -792,6 +825,8 @@ Attack_Result :: struct {
 	first_strike: bool, // a pike struck an enemy stepping next to it
 	attack_advantage:  bool, // melee from high ground down onto low ground
 	defence_advantage: bool, // fortified, or holding high ground against melee from below
+	attack_boon:       Boon, // the attacker was blessed or cursed (used up by this roll)
+	defence_boon:      Boon, // the target was
 }
 
 // High ground in melee: the higher unit has advantage, attacking down or
@@ -830,8 +865,11 @@ resolve_attack :: proc(g: ^Game, attacker, target: int, weapon: Weapon_Kind, fir
 	res.first_strike = first_strike
 	res.fortified = t.fortified
 	res.attack_advantage, res.defence_advantage = combat_advantage(g, a.pos, t.pos, t.fortified)
-	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack, advantage = res.attack_advantage)
-	res.blocks = roll_dice(&g.rng, defence_against(unit_type(t), weapon), advantage = res.defence_advantage)
+	// a blessing or curse is spent on the unit's next roll
+	res.attack_boon, a.boon = a.boon, .None
+	res.defence_boon, t.boon = t.boon, .None
+	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack, advantage = res.attack_advantage || res.attack_boon == .Blessed, disadvantage = res.attack_boon == .Cursed)
+	res.blocks = roll_dice(&g.rng, defence_against(unit_type(t), weapon), advantage = res.defence_advantage || res.defence_boon == .Blessed, disadvantage = res.defence_boon == .Cursed)
 	res.damage = max(0, res.hits - res.blocks)
 	g.ai_held = {} // contact: nobody is holding back any more
 	g.contact_turn = g.turn
@@ -859,7 +897,9 @@ resolve_attack :: proc(g: ^Game, attacker, target: int, weapon: Weapon_Kind, fir
 		}
 	}
 	atk_tag := " (high)" if res.attack_advantage else ""
-	if first_strike { atk_tag = " strikes first and" }
+	if res.attack_boon != .None { atk_tag = fmt.tprintf("%s (%s)", atk_tag, "blessed" if res.attack_boon == .Blessed else "cursed") }
+	if first_strike { atk_tag = fmt.tprintf("%s strikes first and", atk_tag) }
+	if res.defence_boon != .None { def_tag = fmt.tprintf("%s (%s)", def_tag, "blessed" if res.defence_boon == .Blessed else "cursed") }
 	add_log(g, "%s %s%s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, atk_tag,
 		WEAPONS[weapon].verb, tname, unit_type(t).short, def_tag, res.hits, res.blocks, "slain" if res.killed else ("wounded" if res.damage > 0 else "no harm"))
 	check_winner(g)
@@ -907,8 +947,40 @@ unit_finished :: proc(g: ^Game, unit: int) -> bool {
 	if u.done || u.attacked { return true }
 	if u.moves_left > 0 { return false }
 	for i in 0 ..< g.unit_count {
-		if can_attack(g, unit, i) { return false }
+		if can_attack(g, unit, i) || can_chant(g, unit, i) { return false }
 	}
+	return true
+}
+
+// ---------------------------------------------------------------- chanting
+
+// Can this Wololo chant at that unit now? It must not have moved its last or
+// acted; the target is another living unit its side can see, within
+// CHANT_RANGE, with line of sight beyond 1 hex.
+can_chant :: proc(g: ^Game, caster, target: int) -> bool {
+	c := &g.units[caster]
+	t := &g.units[target]
+	if g.winner >= 0 || caster == target || !c.alive || !t.alive || c.done || c.attacked || !unit_type(c).chants { return false }
+	if c.faction != g.current || !unit_visible(g, target, c.faction) { return false }
+	d := hex_distance(c.pos, t.pos)
+	return d <= CHANT_RANGE && (d <= 1 || line_of_sight(g, c.pos, t.pos, c.faction))
+}
+
+// The Wololo blesses a friend (advantage on its next roll) or curses an enemy
+// (disadvantage on its next roll). Like an attack, it ends the Wololo's move.
+// A unit holds one blessing or curse at a time; a new one replaces it.
+chant :: proc(g: ^Game, caster, target: int) -> bool {
+	if !can_chant(g, caster, target) { return false }
+	c := &g.units[caster]
+	t := &g.units[target]
+	t.boon = .Blessed if t.faction == c.faction else .Cursed
+	t.boon_by = c.faction
+	c.attacked = true
+	c.moves_left = 0
+	c.done = true
+	push_event(g, {kind = .Chant, unit = caster, target = target, from = c.pos, target_pos = t.pos})
+	add_log(g, "%s %s %s %s %s", g.factions[c.faction].name, unit_type(c).short,
+		"blesses" if t.boon == .Blessed else "curses", g.factions[t.faction].name, unit_type(t).short)
 	return true
 }
 
@@ -944,6 +1016,7 @@ start_faction_turn :: proc(g: ^Game) {
 			u.fortified = false // fortifying lasts only through the enemy's turn
 		}
 		u.reacted = false // a pike may strike first once in every turn
+		if u.boon != .None && u.boon_by == g.current { u.boon = .None } // unused blessings fade
 	}
 }
 

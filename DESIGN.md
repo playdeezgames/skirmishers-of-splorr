@@ -212,6 +212,14 @@ next:
    guessed (4p vs 6k 77%, vs 8k 51%, vs 9k 35%; 2p4k vs 9k 30%). The warband's
    kobold is now a pike (178 points a side).
 4. Wololo: disadvantage, blessing and cursing, and when the computer casts.
+   **Built November 6, 2026** as proposed (disadvantage, one roll, fades on
+   the caster's next turn, one at a time). It cannot bless itself. The
+   computer plays its Wololos first each turn, so a blessing can go on an
+   attack the same turn; it blesses a friend that can strike now (else one in
+   the enemy's reach) and curses an enemy its units can reach, weighting by
+   points. **Wololo 12 points**: about a kobold beside kobolds (1w4k vs 5k
+   45%), worth more beside big units (1w2h2k vs 1k2h2k 55%, 1w1c3k vs 1c4k
+   61%). The warband has one (nine a side, 190 points).
 5. Sprites and sounds for the new types; scenarios with mixed bands.
 
 ## Suggested order

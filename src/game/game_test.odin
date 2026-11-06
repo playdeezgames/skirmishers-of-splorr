@@ -1168,9 +1168,9 @@ test_mixed_band_games_finish :: proc(t: ^testing.T) {
 test_warband_scenario :: proc(t: ^testing.T) {
 	g: Game
 	new_game(&g, len(SCENARIOS) - 1, 3)
-	testing.expect_value(t, army_points(&g, 0), 178)
-	testing.expect_value(t, army_points(&g, 1), 178)
-	testing.expect_value(t, living_units(&g, 0), 8)
+	testing.expect_value(t, army_points(&g, 0), 190)
+	testing.expect_value(t, army_points(&g, 1), 190)
+	testing.expect_value(t, living_units(&g, 0), 9)
 }
 
 // ---------------------------------------------------------------- bow and crossbow
@@ -1274,4 +1274,92 @@ test_pike_move_events_are_split :: proc(t: ^testing.T) {
 		return
 	}
 	testing.fail_now(t, "the kobold never survived")
+}
+
+// ---------------------------------------------------------------- Wololo
+
+@(test)
+test_disadvantage_odds :: proc(t: ^testing.T) {
+	r := Rng{42}
+	one := Dice{.White = 1, .Red = 0, .Black = 0}
+	N :: 30000
+	scores, both := 0, 0
+	for _ in 0 ..< N {
+		scores += roll_dice(&r, one, disadvantage = true)
+		both += roll_dice(&r, one, advantage = true, disadvantage = true)
+	}
+	// white scores 1/3; with disadvantage it must score twice: 1/9
+	testing.expectf(t, abs(f64(scores) / N - 1.0 / 9) < 0.01, "disadvantage %v", f64(scores) / N)
+	testing.expectf(t, abs(f64(both) / N - 1.0 / 3) < 0.015, "both cancel %v", f64(both) / N)
+}
+
+@(test)
+test_chant_bless_and_curse :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	w := add_unit(&g, .Wololo, 0, {5, 10})
+	k := add_unit(&g, .Kobold, 0, {6, 10})
+	e := add_unit(&g, .Kobold, 1, {8, 10}) // 3 away
+	far := add_unit(&g, .Kobold, 1, {9, 12})
+	testing.expect(t, !can_attack(&g, w, e), "a Wololo has no attack")
+	testing.expect(t, !can_chant(&g, w, far), "out of range")
+	testing.expect(t, can_chant(&g, w, k) && can_chant(&g, w, e))
+	testing.expect(t, chant(&g, w, e))
+	testing.expect_value(t, g.units[e].boon, Boon.Cursed)
+	testing.expect(t, g.units[w].done, "chanting ends its move")
+	testing.expect(t, !can_chant(&g, w, k), "once a turn")
+	testing.expect(t, strings.contains(log_line(&g, 0), "curses"))
+	// the curse is spent on the cursed unit's next roll
+	res, ok := attack(&g, k, e)
+	_ = ok
+	testing.expect(t, !ok, "not adjacent yet") // 2 away: kobold cannot reach
+	g.units[k].pos = {7, 10}
+	res, ok = attack(&g, k, e)
+	testing.expect(t, ok)
+	testing.expect_value(t, res.defence_boon, Boon.Cursed)
+	testing.expect_value(t, g.units[e].boon, Boon.None)
+}
+
+@(test)
+test_blessing_fades_on_casters_turn :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.factions[1].controller = .Human
+	w := add_unit(&g, .Wololo, 0, {5, 10})
+	k := add_unit(&g, .Kobold, 0, {6, 10})
+	add_unit(&g, .Kobold, 1, {15, 10})
+	testing.expect(t, chant(&g, w, k))
+	testing.expect_value(t, g.units[k].boon, Boon.Blessed)
+	g.units[k].done = true
+	testing.expect(t, end_turn(&g)) // Blue's turn: still blessed (for defence)
+	testing.expect_value(t, g.units[k].boon, Boon.Blessed)
+	g.units[2].done = true
+	testing.expect(t, end_turn(&g)) // Red's turn again: unused, it fades
+	testing.expect_value(t, g.units[k].boon, Boon.None)
+}
+
+@(test)
+test_wololo_games_finish :: proc(t: ^testing.T) {
+	kinds := []Unit_Kind{.Wololo, .Kobold_Slinger, .Kobold, .Kobold, .Heavy}
+	for seed in u64(1) ..= 5 {
+		g: Game
+		g.winner = -1
+		g.turn = 1
+		g.rng = {seed}
+		g.fog = true
+		add_faction(&g, "Red", .Computer, RED)
+		add_faction(&g, "Blue", .Computer, BLUE)
+		place_block(&g, 0, kinds, true)
+		place_block(&g, 1, kinds, false)
+		start_faction_turn(&g)
+		update_vision(&g, NO_FACTION)
+		chants := 0
+		for steps := 0; g.winner < 0 && steps < 50000; steps += 1 {
+			before := g.event_count
+			ai_step(&g)
+			for e in before ..< g.event_count { if g.events[e % EVENT_RING].kind == .Chant { chants += 1 } }
+		}
+		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
+		testing.expectf(t, chants > 0, "seed %d: the Wololos never chanted", seed)
+	}
 }

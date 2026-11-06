@@ -10,6 +10,15 @@ is_computer_turn :: proc(g: ^Game) -> bool {
 // every unit is done. Returns false when it is not the computer's turn.
 ai_step :: proc(g: ^Game) -> bool {
 	if !is_computer_turn(g) { return false }
+	// Wololos first, so a blessing can be spent on an attack this turn
+	for i in 0 ..< g.unit_count {
+		u := &g.units[i]
+		if u.alive && u.faction == g.current && !u.done && unit_type(u).chants {
+			ai_chanter_unit(g, i)
+			u.done = true
+			return true
+		}
+	}
 	for i in 0 ..< g.unit_count {
 		u := &g.units[i]
 		if u.alive && u.faction == g.current && !u.done {
@@ -315,6 +324,7 @@ ai_enemy_reach :: proc(g: ^Game, faction, i: int, at: Hex) -> Hex_Mask {
 	e := &g.units[i]
 	et := unit_type(e)
 	_, reach := unit_reach(et)
+	if reach == 0 { return {} } // no weapon (a Wololo): it threatens nobody
 	budget := et.move * HALVES_PER_POINT
 	// plan from where we believe it is
 	real := e.pos
@@ -459,6 +469,11 @@ ai_tactical_target :: proc(g: ^Game, unit: int) -> int {
 		score := dice_strength(WEAPONS[w].attack) * 4 - dice_strength(defence_against(unit_type(t), w)) * 4 - t.body * 8
 		if def_adv { score -= 3 }
 		if atk_adv { score += 2 }
+		switch t.boon {
+		case .Cursed:  score += 3 // it defends with disadvantage
+		case .Blessed: score -= 3
+		case .None:
+		}
 		_, reach := unit_reach(unit_type(t))
 		if reach > 1 { score += 1 } // ranged enemies first
 		if score > best_score {
@@ -467,4 +482,101 @@ ai_tactical_target :: proc(g: ^Game, unit: int) -> int {
 		}
 	}
 	return best
+}
+
+// ---------------------------------------------------------------- Wololo
+
+// How much a blessing or curse on unit t is worth to faction f now (0: none).
+// A friend that can strike this turn gains most (its attack is next); one in
+// an enemy's reach gains on defence. An enemy within our units' reach loses
+// most. Worth more on units worth more points.
+ai_chant_value :: proc(g: ^Game, f: int, t: int, threat: ^Hex_Mask) -> int {
+	u := &g.units[t]
+	if !u.alive || u.boon != .None { return 0 }
+	weight := unit_type(u).points
+	if u.faction == f {
+		strike := !u.done && !u.attacked
+		if strike {
+			for i in 0 ..< g.unit_count {
+				if can_attack(g, t, i) { return 3 * weight }
+			}
+		}
+		if mask_has(threat, u.pos) { return 2 * weight }
+		return 0
+	}
+	if !unit_visible(g, t, f) { return 0 }
+	// an enemy our units could reach: it will roll when we attack it, or when
+	// it attacks us
+	for i in 0 ..< g.unit_count {
+		o := &g.units[i]
+		if !o.alive || o.faction != f || i == t { continue }
+		_, reach := unit_reach(unit_type(o))
+		if reach > 0 && hex_distance(o.pos, u.pos) <= reach + unit_type(o).move { return 2 * weight }
+	}
+	return 0
+}
+
+// The best target for the Wololo standing on `from` (ignoring that it may not
+// be there yet), and what it is worth.
+ai_best_chant :: proc(g: ^Game, caster: int, from: Hex, threat: ^Hex_Mask) -> (best, value: int) {
+	c := &g.units[caster]
+	best = -1
+	for i in 0 ..< g.unit_count {
+		t := &g.units[i]
+		if i == caster || !t.alive || !unit_visible(g, i, c.faction) { continue }
+		d := hex_distance(from, t.pos)
+		if d > CHANT_RANGE || (d > 1 && !line_of_sight(g, from, t.pos, c.faction)) { continue }
+		if v := ai_chant_value(g, c.faction, i, threat); v > value {
+			best = i
+			value = v
+		}
+	}
+	return
+}
+
+// A Wololo moves to where its best chant is worth most, keeping out of the
+// enemy's reach if it can, then chants. With nothing worth chanting it
+// approaches like any unit, staying CHANT_RANGE back from the nearest enemy.
+ai_chanter_unit :: proc(g: ^Game, unit: int) {
+	u := &g.units[unit]
+	f := u.faction
+	view := ai_view(g, unit)
+	threat := ai_threat_map(g, f)
+	costs := movement_costs(g, unit)
+	score :: proc(g: ^Game, unit: int, h: Hex, view: ^Ai_View, threat: ^Hex_Mask) -> [2]int {
+		_, value := ai_best_chant(g, unit, h, threat)
+		unsafe := 1 if mask_has(threat, h) else 0
+		approach := 0
+		if value == 0 {
+			if view.spot_count == 0 {
+				approach = hex_distance(h, view.scout_pos) // follow the scout
+			} else {
+				nearest := max(int)
+				for p in view.spots[:view.spot_count] { nearest = min(nearest, hex_distance(h, p)) }
+				approach = abs(nearest - CHANT_RANGE)
+			}
+		}
+		return {-value * 4 + unsafe * 40 + approach, 0}
+	}
+	best := u.pos
+	best_score := score(g, unit, u.pos, &view, threat)
+	for row in 0 ..< ROWS {
+		for col in 0 ..< COLS {
+			h := Hex{col, row}
+			if !can_move(g, unit, h, &costs) { continue }
+			sc := score(g, unit, h, &view, threat)
+			sc.y = costs[row][col]
+			if sc.x < best_score.x || (sc.x == best_score.x && sc.y < best_score.y) {
+				best = h
+				best_score = sc
+			}
+		}
+	}
+	if best != u.pos { move_unit(g, unit, best) }
+	if !u.alive { return } // a pike may have struck it on the way
+	if t, value := ai_best_chant(g, unit, u.pos, threat); value > 0 {
+		chant(g, unit, t)
+	} else if can_fortify(g, unit) && mask_has(threat, u.pos) && ai_threatened(g, unit) {
+		fortify(g, unit)
+	}
 }

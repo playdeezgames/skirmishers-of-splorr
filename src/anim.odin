@@ -14,6 +14,7 @@ import "game"
 STEP_TIME :: 0.09 // seconds per hex walked
 STRIKE_TIME :: 0.18 // lunge or stone in flight
 FLASH_TIME :: 0.32 // target flashes; a slain unit fades
+CHANT_TIME :: 0.45
 
 Anim :: struct {
 	active: bool,
@@ -54,6 +55,8 @@ anim_duration :: proc(ev: ^game.Event, view: int) -> f64 {
 		}
 	case .Fortify:
 		if own || anim_sees(view, ev.from) { return 0.2 }
+	case .Chant:
+		if own || g.units[ev.target].faction == view || anim_sees(view, ev.from) || anim_sees(view, ev.target_pos) { return CHANT_TIME }
 	}
 	return 0
 }
@@ -82,6 +85,7 @@ anim_update :: proc(dt: f64) {
 		case .Move:    play(.Step)
 		case .Attack:  play(WEAPON_SOUNDS[ev.result.weapon])
 		case .Fortify: play(.Fortify)
+		case .Chant:   play(.Chant)
 		}
 	}
 }
@@ -129,7 +133,7 @@ anim_unit :: proc(i: int, view: int) -> (pos: [2]f32, alpha: f32, show, moved: b
 			fade := 1 - max(0, t - STRIKE_TIME) / FLASH_TIME
 			return hex_centre(ev.target_pos), fade, fade > 0, true
 		}
-	case .Fortify:
+	case .Fortify, .Chant:
 	}
 	return
 }
@@ -137,6 +141,19 @@ anim_unit :: proc(i: int, view: int) -> (pos: [2]f32, alpha: f32, show, moved: b
 // Effects over the units: the sling stone, the flash on the target and a word
 // saying what happened.
 draw_anim_effects :: proc() {
+	if anim.active && anim.ev.kind == .Chant {
+		// a ring widening round the target, gold for a blessing, purple for a curse
+		ev := &anim.ev
+		f := f32(anim.t / CHANT_TIME)
+		bless := g.units[ev.target].faction == g.units[ev.unit].faction
+		col := BLESS_COLOR if bless else CURSE_COLOR
+		b := hex_centre(ev.target_pos)
+		set_alpha(1 - f)
+		draw_hex(b.x, b.y, HEX_R * (0.6 + f * 0.6), 0, 0, 0, 0, col.r, col.g, col.b, 1, 3)
+		text("blessed!" if bless else "cursed!", b.x, b.y - HEX_R - 4 - f * 8, 13, col, 1)
+		set_alpha(1)
+		return
+	}
 	if !anim.active || anim.ev.kind != .Attack { return }
 	ev := &anim.ev
 	t := f32(anim.t)

@@ -44,6 +44,7 @@ Sprite :: enum i32 {
 	Archer,
 	Crossbow,
 	Pike,
+	Wololo,
 }
 
 UNIT_SPRITES := [game.Unit_Kind]Sprite {
@@ -55,7 +56,11 @@ UNIT_SPRITES := [game.Unit_Kind]Sprite {
 	.Archer         = .Archer,
 	.Crossbow       = .Crossbow,
 	.Pike           = .Pike,
+	.Wololo         = .Wololo,
 }
+
+BLESS_COLOR :: Color{1, 0.85, 0.3}
+CURSE_COLOR :: Color{0.72, 0.38, 0.95}
 
 // Order must match SOUND_FILES in web/index.html.
 Sound :: enum i32 {
@@ -71,6 +76,7 @@ Sound :: enum i32 {
 	Lose,
 	Bow,
 	Crossbow,
+	Chant,
 }
 
 // The sound each weapon makes when it is used.
@@ -116,6 +122,11 @@ FORTIFIED_RING :: Color{0.92, 0.86, 0.7}
 PREV_SCENARIO_BUTTON :: Button{PANEL_X, 41, 20, 18}
 NEXT_SCENARIO_BUTTON :: Button{PANEL_X + 24, 41, 20, 18}
 MUTE_BUTTON :: Button{PANEL_X + 292, 12, 84, 24}
+CHANT_BUTTON :: Button{PANEL_X + 292, 100, 84, 24} // shown while a Wololo is selected
+
+// With a Wololo selected, chant mode makes a click on a friend bless it
+// instead of selecting it (a click on an enemy in range always curses).
+chanting := false
 
 ctx: runtime.Context
 g: game.Game
@@ -273,12 +284,23 @@ mouse_click :: proc "c" (x, y: f32) {
 		fortify_selected()
 		return
 	}
+	if in_button(CHANT_BUTTON, x, y) && selected_chants() {
+		chanting = !chanting
+		return
+	}
 	h := screen_to_hex(x, y)
 	if x >= PANEL_X - 4 || !game.in_bounds(h) {
 		selected = -1
 		return
 	}
 	other := game.unit_at(&g, h)
+	if selected_chants() && other >= 0 && (chanting || g.units[other].faction != g.current) && game.can_chant(&g, selected, other) {
+		game.chant(&g, selected, other) // this ends the Wololo's move
+		chanting = false
+		select_next_unit()
+		return
+	}
+	chanting = false
 	if other >= 0 && g.units[other].faction == g.current {
 		selected = other
 		return
@@ -307,6 +329,10 @@ select_next_unit :: proc() {
 		}
 	}
 	selected = -1
+}
+
+selected_chants :: proc() -> bool {
+	return selected >= 0 && game.unit_type(&g.units[selected]).chants && human_turn()
 }
 
 fortify_selected :: proc() {
@@ -352,6 +378,8 @@ on_key :: proc(e: js.Event) {
 	switch e.key.key {
 	case " ", "Enter":
 		if human_turn() { end_human_turn() }
+	case "c", "C":
+		if selected_chants() { chanting = !chanting }
 	case "d", "D":
 		fortify_selected()
 	case "f", "F":
@@ -515,6 +543,12 @@ draw_map :: proc() {
 		if finished { set_alpha(alpha * 0.55) }
 		blit(i32(UNIT_SPRITES[u.kind]), p.x, p.y, 2) // the kobold's dagger or the slinger's sling
 		set_alpha(alpha)
+		if u.boon != .None {
+			// blessed (+) or cursed (-): a small badge at the upper left
+			bc := BLESS_COLOR if u.boon == .Blessed else CURSE_COLOR
+			draw_circle(p.x - HEX_R * 0.55, p.y - HEX_R * 0.5, 5, bc.r, bc.g, bc.b, 0.1, 0.1, 0.1, 1)
+			text("+" if u.boon == .Blessed else "-", p.x - HEX_R * 0.55, p.y - HEX_R * 0.5 + 1, 10, Color{0.1, 0.1, 0.1}, 1)
+		}
 		if most := game.unit_type(u).body; most > 1 {
 			// body points: a pip each along the bottom of the counter, dark once lost
 			for b in 0 ..< most {
@@ -529,6 +563,11 @@ draw_map :: proc() {
 		}
 		if selected >= 0 && !anim_busy() && game.can_attack(&g, selected, i) {
 			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, 1, 0.15, 0.1, 1, 3)
+		}
+		if selected_chants() && !anim_busy() && game.can_chant(&g, selected, i) && (chanting || u.faction != g.current) {
+			// who the Wololo can bless (gold, in chant mode) or curse (purple)
+			cc := BLESS_COLOR if u.faction == g.current else CURSE_COLOR
+			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, cc.r, cc.g, cc.b, 1, 3)
 		}
 	}
 	draw_anim_effects()
@@ -582,11 +621,17 @@ draw_panel :: proc() {
 			text(fmt.tprintf("%s: %s, %s%s", wp.name, dice_text(wp.attack), reach, note), x, wy, 13, GREY)
 			wy += 18
 		}
-		state := "may attack"
+		if ut.chants {
+			text(fmt.tprintf("chant: bless a friend or curse a foe, range %d", game.CHANT_RANGE), x, wy, 13, GREY)
+			wy += 18
+		}
+		state := "may chant" if ut.chants else "may attack"
+		if ut.chants && chanting { state = "chant mode: click a friend to bless it" }
+		if u.boon != .None { state = fmt.tprintf("%s; %s", state, "blessed" if u.boon == .Blessed else "cursed") }
 		if u.fortified {
 			state = "fortified: defends with advantage"
 		} else if u.attacked {
-			state = "attacked: done for this turn"
+			state = "acted: done for this turn"
 		} else if u.done {
 			state = "move finished"
 		} else if game.unit_finished(&g, selected) {
@@ -612,6 +657,7 @@ draw_panel :: proc() {
 		if hu := game.unit_at(&g, hover); hu >= 0 && game.unit_visible(&g, hu, view) {
 			u := &g.units[hu]
 			label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
+			if u.boon != .None { label = fmt.tprintf("%s, %s", label, "blessed" if u.boon == .Blessed else "cursed") }
 			if .Pike in game.unit_type(u).weapons && u.faction != g.current {
 				label = fmt.tprintf("%s, %s", label, "has struck first" if u.reacted else "ready to strike first")
 			}
@@ -638,6 +684,7 @@ draw_panel :: proc() {
 
 	left := game.units_left_to_act(&g) if human_turn() else 0
 	button(FORTIFY_BUTTON, "Fortify", human_turn() && selected >= 0 && game.can_fortify(&g, selected))
+	if selected_chants() { button(CHANT_BUTTON, "Chanting" if chanting else "Chant (C)", !g.units[selected].done) }
 	button(FINISH_MOVE_BUTTON, "Finish move", human_turn() && selected >= 0 && !game.unit_finished(&g, selected))
 	button(END_TURN_BUTTON, "End turn", human_turn() && left == 0)
 	button(NEW_GAME_BUTTON, "New game", true)
