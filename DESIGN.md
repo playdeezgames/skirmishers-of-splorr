@@ -81,6 +81,13 @@ results exactly.
 - **Animation:** units slide along their path and attacks flash, so the computer's
   turn can be followed.
 - **Art and sound** made with the Anvil tools, as for other SPLORR!! games.
+  **Built November 6, 2026:** units slide hex by hex (only on hexes the viewing
+  side can see), a dagger lunges and a sling throws a stone, the target flashes
+  red (hit) or white (blocked) with a word, and a slain unit fades. The
+  computer waits for each animation, and the player's clicks wait too. Three
+  16x16 Anvil sprites drawn at 2x (kobold with dagger, slinger with sling, a
+  pair of trees for forest) on the faction-coloured counters, and ten Anvil
+  sounds (step, stab, sling, hit, block, slain, fortify, your turn, win, lose).
 
 ## Computer player
 
@@ -124,5 +131,5 @@ What was built and what the simulator found (tactical blue vs basic red):
 3. Elevation. **Done November 6, 2026.**
 4. Fog of war. **Done November 6, 2026.**
 5. Computer player improvements. **Done November 6, 2026.**
-6. Move animation; Anvil art and sound.
+6. Move animation; Anvil art and sound. **Done November 6, 2026.**
 7. Tap to inspect (check on a touch-size screen).

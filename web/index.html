@@ -26,6 +26,38 @@
 		const g = cv.getContext("2d");
 		const rgb = (r, gr, b, a = 1) => `rgba(${r * 255 | 0},${gr * 255 | 0},${b * 255 | 0},${a})`;
 		const memory = new odin.WasmMemoryInterface();
+		g.imageSmoothingEnabled = false;
+		// Sprites: art.png is a strip of 16x16 sprites in Anvil sprite-set order
+		// (tools/gen_atlas.py); `Sprite` in src/main.odin follows the same order.
+		const SPRITE = 16;
+		const atlas = new Image();
+		atlas.src = "art.png";
+
+		// Sounds: WAVs made in the Anvil (sound_export). The order must match
+		// `Sound` in src/main.odin. Browsers only allow audio after the player
+		// presses something, so they are fetched and decoded on the first press.
+		const SOUND_FILES = ["step", "stab", "sling", "hit", "block", "slain", "fortify", "your_turn", "win", "lose"];
+		let audio = null, gain = null;
+		const buffers = [];
+		const unlockAudio = () => {
+			if (audio) return;
+			audio = new (window.AudioContext || window.webkitAudioContext)();
+			gain = audio.createGain();
+			gain.gain.value = 0.3;
+			gain.connect(audio.destination);
+			SOUND_FILES.forEach((name, i) => {
+				fetch(`sfx/${name}.wav`).then(r => r.arrayBuffer()).then(b => audio.decodeAudioData(b)).then(buf => { buffers[i] = buf; }).catch(() => {});
+			});
+		};
+		addEventListener("keydown", unlockAudio);
+		addEventListener("pointerdown", unlockAudio);
+		const playSound = (id) => {
+			if (!audio || !buffers[id]) return;
+			const src = audio.createBufferSource();
+			src.buffer = buffers[id];
+			src.connect(gain);
+			src.start();
+		};
 		const hexPath = (cx, cy, rad) => {
 			g.beginPath();
 			for (let i = 0; i < 6; i++) {
@@ -57,6 +89,13 @@
 					g.fillStyle = rgb(fr, fg, fb); g.fill();
 					if (line > 0) { g.strokeStyle = rgb(sr, sg, sb); g.lineWidth = line; g.stroke(); }
 				},
+				set_alpha: (a) => { g.globalAlpha = a; },
+				blit: (sprite, cx, cy, scale) => {
+					if (!atlas.complete || !atlas.naturalWidth) return;
+					const s = SPRITE * scale;
+					g.drawImage(atlas, sprite * SPRITE, 0, SPRITE, SPRITE, Math.round(cx - s / 2), Math.round(cy - s / 2), s, s);
+				},
+				play_sound: (id) => playSound(id),
 				draw_text: (ptr, len, x, y, size, r, gr, b, align) => {
 					g.font = `${size}px monospace`;
 					g.textAlign = ["left", "center", "right"][align] || "left";

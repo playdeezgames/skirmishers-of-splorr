@@ -4,7 +4,7 @@ A hex-and-counter wargame in the browser. You command a band of kobolds against 
 
 **Play: https://playdeezgames.github.io/skirmishers-of-splorr/**
 
-Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code, the rules text, the screenshots and this README. See [DESIGN.md](DESIGN.md) for the designer's decisions, including what is planned but not built yet (animation, art and sound).
+Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code, the rules text, the pixel art and sounds (made in the Anvil, the author's art and sound tool), the screenshots and this README. See [DESIGN.md](DESIGN.md) for the designer's decisions, including what is planned but not built yet (tap to inspect on touch screens).
 
 ## Rules
 
@@ -29,7 +29,7 @@ Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, 
 
 ## Build
 
-Odin (`dev-2026-07` or newer). Python 3 with Pillow and Google Chrome are only needed for the screenshots.
+Odin (`dev-2026-07` or newer) and Python 3 (the build packs the sprites with `tools/gen_atlas.py`, standard library only). Pillow and Google Chrome are only needed for the screenshots.
 
 ```bash
 ./test.sh                      # rules tests, native

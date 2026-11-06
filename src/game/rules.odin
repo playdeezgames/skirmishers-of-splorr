@@ -206,6 +206,34 @@ Log_Line :: struct {
 	len: int,
 }
 
+// What just happened, for the page to animate and play sounds for. The rules
+// push one Event per move, attack and fortify into a ring; the page keeps its
+// own count of how many it has shown (`event_count` only grows).
+EVENT_RING :: 32
+MAX_EVENT_PATH :: 16
+
+Event_Kind :: enum u8 {
+	Move,
+	Attack,
+	Fortify,
+}
+
+Event :: struct {
+	kind:       Event_Kind,
+	unit:       int, // the mover, attacker or fortifier
+	target:     int, // attacks only
+	from:       Hex, // where the unit started
+	path:       [MAX_EVENT_PATH]Hex, // moves: the hexes walked, ending where it stopped
+	steps:      int,
+	target_pos: Hex,
+	result:     Attack_Result,
+}
+
+push_event :: proc(g: ^Game, e: Event) {
+	g.events[g.event_count % EVENT_RING] = e
+	g.event_count += 1
+}
+
 Game :: struct {
 	terrain:       [ROWS][COLS]Terrain,
 	high:          [ROWS][COLS]bool, // elevation: high ground (true) or low ground
@@ -236,6 +264,8 @@ Game :: struct {
 	ai_holding:    [MAX_FACTIONS]bool, // some unit held back this turn
 	ai_threat:     [MAX_FACTIONS]Ai_Threat, // cached threat maps
 	ai_reach:      [MAX_FACTIONS][MAX_UNITS]Ai_Reach, // cached per enemy
+	events:        [EVENT_RING]Event, // see push_event
+	event_count:   int,
 	view_cache:    [Unit_Kind][ROWS][COLS]Cached_View, // terrain never changes in a game
 }
 
@@ -462,6 +492,14 @@ move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 	stop := start if reached < 0 else path[reached]
 	u.moves_left -= costs[stop.y][stop.x]
 	u.pos = stop
+	if reached >= 0 {
+		ev := Event{kind = .Move, unit = unit, from = start}
+		for i in 0 ..= min(reached, MAX_EVENT_PATH - 1) {
+			ev.path[i] = path[i]
+			ev.steps += 1
+		}
+		push_event(g, ev)
+	}
 	if bumped { add_log(g, "%s %s stops: an enemy blocks the way", g.factions[u.faction].name, unit_type(u).short) }
 	update_vision(g, u.faction)
 	return true
@@ -623,6 +661,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 		g.kills[a.faction][weapon] += 1
 		update_vision(g, a.faction)
 	}
+	push_event(g, {kind = .Attack, unit = attacker, target = target, from = a.pos, target_pos = t.pos, result = res})
 	aname := g.factions[a.faction].name
 	tname := g.factions[t.faction].name
 	// "Red Kobold (high) stabs Blue Kobold (fort): 1 hit 0 block, slain"; the tags
@@ -670,6 +709,7 @@ fortify :: proc(g: ^Game, unit: int) -> bool {
 	u.done = true
 	u.moves_left = 0
 	g.fortifies[u.faction] += 1
+	push_event(g, {kind = .Fortify, unit = unit, from = u.pos})
 	add_log(g, "%s %s fortifies", g.factions[u.faction].name, unit_type(u).short)
 	return true
 }
