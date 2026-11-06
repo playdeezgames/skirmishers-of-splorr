@@ -96,6 +96,7 @@ Weapon_Kind :: enum u8 {
 	Sword,
 	Bow,
 	Crossbow,
+	Pike,
 }
 
 Weapon :: struct {
@@ -105,6 +106,7 @@ Weapon :: struct {
 	min_range: int,
 	max_range: int,
 	pierce:    bool, // the target rolls without its best defence die (see defence_against)
+	first_strike: bool, // strikes an enemy that steps next to it, on the enemy's turn (move_unit)
 }
 
 WEAPONS := [Weapon_Kind]Weapon {
@@ -114,6 +116,7 @@ WEAPONS := [Weapon_Kind]Weapon {
 	.Sword  = {name = "sword", verb = "cuts", attack = {.White = 1, .Red = 1, .Black = 0}, min_range = 1, max_range = 1},
 	.Bow    = {name = "bow", verb = "shoots", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 5},
 	.Crossbow = {name = "crossbow", verb = "bolts", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 4, pierce = true},
+	.Pike   = {name = "pike", verb = "skewers", attack = {.White = 0, .Red = 1, .Black = 0}, min_range = 1, max_range = 1, first_strike = true},
 }
 
 // ---------------------------------------------------------------- armour
@@ -179,6 +182,7 @@ Unit_Kind :: enum u8 {
 	Scout,
 	Archer,
 	Crossbow,
+	Pike,
 }
 
 Unit_Type :: struct {
@@ -267,6 +271,17 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		points = 16, // an archer's worth against bare hide, much more against armour (simulator, November 6, 2026)
 		vision = 6,
 	},
+	.Pike = {
+		name = "Kobold Pike",
+		short = "Pike",
+		weapons = {.Pike},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		armour = .Leather,
+		body = 1,
+		move = 3,
+		points = 20, // 4 pikes match 8 kobolds (51%); the first strike is worth a lot (simulator, November 6, 2026)
+		vision = 5,
+	},
 }
 
 Unit :: struct {
@@ -279,6 +294,7 @@ Unit :: struct {
 	attacked:   bool, // has made its attack this turn
 	done:       bool, // has ended its move this turn (by choice, or by attacking)
 	fortified:  bool, // defends with advantage until its side's next turn starts
+	reacted:    bool, // has struck first this turn (pikes; cleared whenever a turn starts)
 }
 
 unit_type :: proc(u: ^Unit) -> ^Unit_Type {
@@ -574,7 +590,31 @@ path_to :: proc(g: ^Game, start, dest: Hex, costs: ^[ROWS][COLS]int) -> (path: [
 	return
 }
 
-// Moves the unit to dest one hex at a time. Under fog the way can run into an
+push_move_event :: proc(g: ^Game, unit: int, from: Hex, steps: []Hex) {
+	if len(steps) == 0 { return }
+	ev := Event{kind = .Move, unit = unit, from = from}
+	for h in steps[:min(len(steps), MAX_EVENT_PATH)] {
+		ev.path[ev.steps] = h
+		ev.steps += 1
+	}
+	push_event(g, ev)
+}
+
+// An enemy pike that strikes the unit as it steps onto h: next to h, alive,
+// and not yet used this turn. -1 if none.
+first_striker :: proc(g: ^Game, unit: int, h: Hex) -> int {
+	u := &g.units[unit]
+	for i in 0 ..< g.unit_count {
+		p := &g.units[i]
+		if !p.alive || p.faction == u.faction || p.reacted || .Pike not_in unit_type(p).weapons { continue }
+		if hex_distance(p.pos, h) == 1 { return i }
+	}
+	return -1
+}
+
+// Moves the unit to dest one hex at a time. A pike strikes first when the
+// unit steps next to it (once per pike per turn); if that kills the unit its
+// move ends there, otherwise it walks on. Under fog the way can run into an
 // enemy the side could not see: the unit then stops short (on the last hex of
 // the way it may stand on), keeps the points it has not spent, and now sees the
 // enemy. Returns false only if the move was refused.
@@ -587,6 +627,9 @@ move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 	path, n := path_to(g, start, dest, &costs)
 	reached := -1 // index into path of the furthest hex walked; -1 is the start
 	bumped := false
+	// the move is told as Move events split around any pike's strike, so the
+	// page shows them in order
+	seg_from, seg_first := start, 0
 	for i in 0 ..< n {
 		h := path[i]
 		if o := unit_at(g, h); o >= 0 && g.units[o].faction != u.faction {
@@ -594,6 +637,23 @@ move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 			break
 		}
 		reached = i
+		// every pike it steps next to strikes, one after another
+		for pike := first_striker(g, unit, h); pike >= 0; pike = first_striker(g, unit, h) {
+			if seg_first <= i {
+				push_move_event(g, unit, seg_from, path[seg_first:i + 1])
+				seg_from, seg_first = h, i + 1
+			}
+			u.pos = h // it is struck where it stands
+			res := resolve_attack(g, pike, unit, .Pike, first_strike = true)
+			g.units[pike].reacted = true
+			u.pos = start
+			if res.killed {
+				u.pos = h
+				u.moves_left -= costs[h.y][h.x]
+				update_vision(g, u.faction)
+				return true
+			}
+		}
 		if g.fog {
 			// what the unit sees on the way, and who sees it pass
 			look_from(g, u.faction, u.kind, h)
@@ -608,13 +668,11 @@ move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 	stop := start if reached < 0 else path[reached]
 	u.moves_left -= costs[stop.y][stop.x]
 	u.pos = stop
-	if reached >= 0 {
-		ev := Event{kind = .Move, unit = unit, from = start}
-		for i in 0 ..= min(reached, MAX_EVENT_PATH - 1) {
-			ev.path[i] = path[i]
-			ev.steps += 1
-		}
-		push_event(g, ev)
+	if reached >= seg_first {
+		push_move_event(g, unit, seg_from, path[seg_first:reached + 1])
+	} else if stop != seg_from {
+		one := [1]Hex{stop} // backed off a friend to before the last strike
+		push_move_event(g, unit, seg_from, one[:])
 	}
 	if bumped { add_log(g, "%s %s stops: an enemy blocks the way", g.factions[u.faction].name, unit_type(u).short) }
 	update_vision(g, u.faction)
@@ -731,6 +789,7 @@ Attack_Result :: struct {
 	damage: int, // body points lost
 	killed: bool,
 	fortified: bool, // the target was fortified
+	first_strike: bool, // a pike struck an enemy stepping next to it
 	attack_advantage:  bool, // melee from high ground down onto low ground
 	defence_advantage: bool, // fortified, or holding high ground against melee from below
 }
@@ -756,18 +815,26 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	if g.winner >= 0 || g.units[attacker].faction != g.current || g.units[attacker].done { return }
 	weapon := attack_weapon(g, attacker, target) or_return
 	a := &g.units[attacker]
+	a.attacked = true
+	a.moves_left = 0 // attacking ends the unit's movement
+	a.done = true
+	return resolve_attack(g, attacker, target, weapon), true
+}
+
+// Rolls one attack and applies it: shared by attack and a pike striking first
+// (which costs the pike nothing on its own turn).
+resolve_attack :: proc(g: ^Game, attacker, target: int, weapon: Weapon_Kind, first_strike := false) -> (res: Attack_Result) {
+	a := &g.units[attacker]
 	t := &g.units[target]
 	res.weapon = weapon
+	res.first_strike = first_strike
 	res.fortified = t.fortified
 	res.attack_advantage, res.defence_advantage = combat_advantage(g, a.pos, t.pos, t.fortified)
 	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack, advantage = res.attack_advantage)
 	res.blocks = roll_dice(&g.rng, defence_against(unit_type(t), weapon), advantage = res.defence_advantage)
 	res.damage = max(0, res.hits - res.blocks)
-	a.attacked = true
-	a.moves_left = 0 // attacking ends the unit's movement
 	g.ai_held = {} // contact: nobody is holding back any more
 	g.contact_turn = g.turn
-	a.done = true
 	g.attacks[a.faction][weapon] += 1
 	t.body -= res.damage
 	if t.body <= 0 {
@@ -791,10 +858,12 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 		case:                            def_tag = " (high)"
 		}
 	}
-	add_log(g, "%s %s%s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, " (high)" if res.attack_advantage else "",
+	atk_tag := " (high)" if res.attack_advantage else ""
+	if first_strike { atk_tag = " strikes first and" }
+	add_log(g, "%s %s%s %s %s %s%s: %d hit %d block, %s", aname, unit_type(a).short, atk_tag,
 		WEAPONS[weapon].verb, tname, unit_type(t).short, def_tag, res.hits, res.blocks, "slain" if res.killed else ("wounded" if res.damage > 0 else "no harm"))
 	check_winner(g)
-	return res, true
+	return res
 }
 
 // Finishes a unit's move for this turn (the player's "Finish move"): it may not
@@ -874,6 +943,7 @@ start_faction_turn :: proc(g: ^Game) {
 			u.done = false
 			u.fortified = false // fortifying lasts only through the enemy's turn
 		}
+		u.reacted = false // a pike may strike first once in every turn
 	}
 }
 

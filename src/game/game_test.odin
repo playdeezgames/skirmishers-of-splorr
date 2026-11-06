@@ -1168,8 +1168,8 @@ test_mixed_band_games_finish :: proc(t: ^testing.T) {
 test_warband_scenario :: proc(t: ^testing.T) {
 	g: Game
 	new_game(&g, len(SCENARIOS) - 1, 3)
-	testing.expect_value(t, army_points(&g, 0), 168)
-	testing.expect_value(t, army_points(&g, 1), 168)
+	testing.expect_value(t, army_points(&g, 0), 178)
+	testing.expect_value(t, army_points(&g, 1), 178)
 	testing.expect_value(t, living_units(&g, 0), 8)
 }
 
@@ -1203,4 +1203,75 @@ test_bow_and_crossbow_ranges :: proc(t: ^testing.T) {
 	g.units[e].pos = {3, 10}
 	w, ok = attack_weapon(&g, a, e)
 	testing.expect(t, ok && w == .Dagger, "an archer falls back on its dagger")
+}
+
+// ---------------------------------------------------------------- pike
+
+@(test)
+test_pike_strikes_first :: proc(t: ^testing.T) {
+	// find a seed where the pike's strike kills, and one where it does not
+	killed_once, survived_once := false, false
+	for seed in u64(1) ..= 200 {
+		g: Game
+		blank_game(&g, seed)
+		k := add_unit(&g, .Kobold, 0, {3, 10})
+		p := add_unit(&g, .Pike, 1, {6, 10})
+		testing.expect(t, move_unit(&g, k, {4, 10})) // 2 from the pike: not next to it
+		testing.expect(t, !g.units[p].reacted, "not next to the pike yet")
+		testing.expect(t, move_unit(&g, k, {5, 10})) // steps next to the pike
+		testing.expect(t, g.units[p].reacted)
+		testing.expect(t, strings.contains(log_line(&g, 0), "strikes first") || strings.contains(log_line(&g, 1), "strikes first"))
+		if !g.units[k].alive {
+			killed_once = true
+			testing.expect_value(t, g.units[k].pos, Hex{5, 10})
+		} else {
+			survived_once = true
+			// another step next to the same pike: it has struck this turn already
+			count := g.event_count
+			testing.expect(t, move_unit(&g, k, {5, 9})) // one step, still next to the pike
+			testing.expect_value(t, g.event_count - count, 1) // only the move
+		}
+		if killed_once && survived_once { break }
+	}
+	testing.expect(t, killed_once && survived_once)
+}
+
+@(test)
+test_pike_strikes_again_next_turn :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g, 3)
+	g.factions[0].controller = .Human
+	add_unit(&g, .Pike, 1, {6, 10})
+	g.units[0].reacted = true
+	g.current = 1
+	start_faction_turn(&g)
+	testing.expect(t, !g.units[0].reacted, "cleared when a turn starts")
+}
+
+@(test)
+test_pike_move_events_are_split :: proc(t: ^testing.T) {
+	for seed in u64(1) ..= 200 {
+		g: Game
+		blank_game(&g, seed)
+		// a grass corridor along row 10, forest all round, so the way is fixed
+		for row in 0 ..< ROWS { for col in 0 ..< COLS { if row != 10 { g.terrain[row][col] = .Forest } } }
+		k := add_unit(&g, .Kobold, 0, {1, 10})
+		add_unit(&g, .Pike, 1, {3, 9}) // next to 3,10 and 4,10
+		before := g.event_count
+		testing.expect(t, move_unit(&g, k, {5, 10}))
+		if !g.units[k].alive { continue }
+		// the move up to the pike, the pike's attack, the rest of the move
+		testing.expect_value(t, g.event_count - before, 3)
+		first := g.events[before % EVENT_RING]
+		testing.expect_value(t, first.kind, Event_Kind.Move)
+		testing.expect_value(t, first.path[first.steps - 1], Hex{3, 10})
+		testing.expect_value(t, g.events[(before + 1) % EVENT_RING].kind, Event_Kind.Attack)
+		testing.expect(t, g.events[(before + 1) % EVENT_RING].result.first_strike)
+		last := g.events[(before + 2) % EVENT_RING]
+		testing.expect_value(t, last.kind, Event_Kind.Move)
+		testing.expect_value(t, last.from, Hex{3, 10})
+		testing.expect_value(t, g.units[k].pos, Hex{5, 10})
+		return
+	}
+	testing.fail_now(t, "the kobold never survived")
 }

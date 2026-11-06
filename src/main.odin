@@ -43,6 +43,7 @@ Sprite :: enum i32 {
 	Scout,
 	Archer,
 	Crossbow,
+	Pike,
 }
 
 UNIT_SPRITES := [game.Unit_Kind]Sprite {
@@ -53,6 +54,7 @@ UNIT_SPRITES := [game.Unit_Kind]Sprite {
 	.Scout          = .Scout,
 	.Archer         = .Archer,
 	.Crossbow       = .Crossbow,
+	.Pike           = .Pike,
 }
 
 // Order must match SOUND_FILES in web/index.html.
@@ -79,6 +81,7 @@ WEAPON_SOUNDS := [game.Weapon_Kind]Sound {
 	.Sword    = .Stab,
 	.Bow      = .Bow,
 	.Crossbow = .Crossbow,
+	.Pike     = .Stab,
 }
 
 play :: proc(s: Sound) {
@@ -575,7 +578,8 @@ draw_panel :: proc() {
 		for w in ut.weapons {
 			wp := &game.WEAPONS[w]
 			reach := fmt.tprintf("range %d", wp.max_range) if wp.min_range == wp.max_range else fmt.tprintf("range %d-%d", wp.min_range, wp.max_range)
-			text(fmt.tprintf("%s: %s, %s%s", wp.name, dice_text(wp.attack), reach, ", pierces armour" if wp.pierce else ""), x, wy, 13, GREY)
+			note := ", pierces armour" if wp.pierce else (", strikes first" if wp.first_strike else "")
+			text(fmt.tprintf("%s: %s, %s%s", wp.name, dice_text(wp.attack), reach, note), x, wy, 13, GREY)
 			wy += 18
 		}
 		state := "may attack"
@@ -608,6 +612,9 @@ draw_panel :: proc() {
 		if hu := game.unit_at(&g, hover); hu >= 0 && game.unit_visible(&g, hu, view) {
 			u := &g.units[hu]
 			label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
+			if .Pike in game.unit_type(u).weapons && u.faction != g.current {
+				label = fmt.tprintf("%s, %s", label, "has struck first" if u.reacted else "ready to strike first")
+			}
 			// explain a shot the selected unit cannot take because of forest
 			if selected >= 0 && u.faction != g.units[selected].faction {
 				d := game.hex_distance(g.units[selected].pos, u.pos)

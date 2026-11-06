@@ -62,6 +62,9 @@ Ai_View :: struct {
 	goal:        Hex,
 	friends:     [MAX_UNITS]Hex, // where the rest of the side stands (for the scout's leash)
 	friend_count: int,
+	self_pos:    Hex,
+	pikes:       [MAX_UNITS]Hex, // enemy pikes in sight that have not struck first this turn
+	pike_count:  int,
 }
 
 SCOUT_LEAD :: 2
@@ -69,9 +72,14 @@ SCOUT_LEASH :: 4 // hexes the scout may get ahead of its nearest friend
 
 ai_view :: proc(g: ^Game, unit: int) -> (v: Ai_View) {
 	f := g.units[unit].faction
+	v.self_pos = g.units[unit].pos
 	for i in 0 ..< g.unit_count {
 		e := &g.units[i]
 		if !e.alive || e.faction == f { continue }
+		if unit_visible(g, i, f) && !e.reacted && .Pike in unit_type(e).weapons {
+			v.pikes[v.pike_count] = e.pos
+			v.pike_count += 1
+		}
 		if unit_visible(g, i, f) {
 			v.enemies[v.enemy_count] = i
 			v.enemy_count += 1
@@ -235,6 +243,8 @@ ai_threatened :: proc(g: ^Game, unit: int) -> bool {
 //   - It attacks the target it is likeliest to hurt: not fortified, not holding
 //     the high ground against it, a slinger before a kobold.
 //   - It fortifies only when it cannot get out of reach and cannot attack.
+//   - It would rather not step next to an enemy pike that has yet to strike
+//     first this turn (PIKE_DREAD), all else being equal.
 //   - With no enemy known, its scout would rather end in forest (hidden beyond
 //     2 hexes) than gain SCOUT_COVER more hexes.
 // Holding back stops once anyone has attacked in the last round: by then it
@@ -245,6 +255,7 @@ ai_threatened :: proc(g: ^Game, unit: int) -> bool {
 // looks: one dagger blow kills 2 times in 9, and the whole line strikes back.
 
 HOLD_TURNS :: 2
+PIKE_DREAD :: 3 // terrain-bonus points a hex loses for each ready enemy pike next to it
 SCOUT_COVER :: 2 // hexes of progress a scout gives up to end its move in forest
 
 // Hexes some known enemy (in sight, or at its last-seen marker) could attack next turn: from every hex it could
@@ -383,6 +394,10 @@ ai_tactical_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: 
 	// 2h2a, seed 1034: both sides stood still from turn 20 on)
 	if what >= 2 && view.spot_count == 0 && view.is_scout && h != view.scout_pos && terrain_at(g, h) == .Forest { what -= SCOUT_COVER }
 	bonus := 0
+	// stepping next to a pike that has not struck yet this turn draws its blow
+	if h != view.self_pos {
+		for p in view.pikes[:view.pike_count] { if hex_distance(h, p) == 1 { bonus -= PIKE_DREAD } }
+	}
 	if !unsafe { bonus += 4 }
 	if is_high(g, h) { bonus += 2 }
 	if terrain_at(g, h) == .Forest { bonus += 1 }

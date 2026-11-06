@@ -192,6 +192,27 @@
         0, 1, 34, 17, 34, 16, 0, 0,
         0, 1, 17, 0, 17, 16, 0, 0
       ]
+    },
+    {
+      "name": "pike",
+      "bytes": [
+        0, 0, 0, 0, 0, 0, 8, 0,
+        0, 1, 16, 0, 0, 0, 120, 112,
+        0, 20, 65, 0, 0, 0, 9, 0,
+        0, 1, 34, 33, 17, 0, 9, 0,
+        0, 18, 34, 34, 34, 17, 9, 0,
+        1, 34, 37, 98, 34, 34, 25, 0,
+        1, 34, 34, 34, 35, 51, 57, 0,
+        0, 18, 34, 34, 17, 17, 25, 0,
+        0, 1, 34, 34, 16, 0, 41, 32,
+        0, 1, 169, 169, 34, 34, 41, 0,
+        0, 26, 154, 154, 146, 17, 25, 0,
+        17, 42, 154, 154, 146, 16, 9, 0,
+        1, 17, 169, 169, 162, 16, 9, 0,
+        0, 1, 34, 34, 34, 16, 9, 0,
+        0, 1, 34, 17, 34, 16, 9, 0,
+        0, 1, 17, 0, 17, 16, 9, 0
+      ]
     }
   ]
 }}
@@ -207,7 +228,8 @@
       {"name": "champion", "tileset": "art", "image": "champion", "transparent": 0},
       {"name": "scout", "tileset": "art", "image": "scout", "transparent": 0},
       {"name": "archer", "tileset": "art", "image": "archer", "transparent": 0},
-      {"name": "crossbow", "tileset": "art", "image": "crossbow", "transparent": 0}
+      {"name": "crossbow", "tileset": "art", "image": "crossbow", "transparent": 0},
+      {"name": "pike", "tileset": "art", "image": "pike", "transparent": 0}
     ]}
   ],
   "params": [],

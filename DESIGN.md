@@ -204,7 +204,13 @@ next:
    forest bonus matched the ground its leash let it gain); it now gets the
    bonus only for a hex it moves to.
 3. Pike (the strikes-first reaction, the first rule that acts on the other
-   side's turn; the computer must plan around it).
+   side's turn; the computer must plan around it). **Built November 6, 2026**
+   as proposed: every ready pike next to the hex an enemy steps onto strikes
+   (once per pike per enemy turn), a kill ends the move, a survivor walks on.
+   The computer avoids stepping next to a ready pike it can see, when it has
+   an equally good hex. **Pike 20 points**: much stronger than the draft
+   guessed (4p vs 6k 77%, vs 8k 51%, vs 9k 35%; 2p4k vs 9k 30%). The warband's
+   kobold is now a pike (178 points a side).
 4. Wololo: disadvantage, blessing and cursing, and when the computer casts.
 5. Sprites and sounds for the new types; scenarios with mixed bands.
 

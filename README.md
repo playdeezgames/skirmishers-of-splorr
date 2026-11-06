@@ -9,7 +9,7 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 ## Rules
 
 - **Dice.** Attackers roll their weapon's attack dice and defenders roll their defence dice. A white die scores on 1 in 3, a red die on 1 in 2, and a black die on 2 in 3. Each block cancels one hit, and each hit left over costs a body point. Kobolds have 1 body point.
-- **Units.** A Kobold (`K`) carries a dagger (1 white die, range 1). A Kobold Slinger (`S`) carries a sling (1 white die, range 2 to 3) and a dagger, and uses whichever reaches the target. Both defend with 1 white die and move 4. A kobold is worth 10 points and a slinger 12. A **Heavy Kobold** chops with an axe (1 red die), wears chain (defends with 1 white and 1 red), has 2 body points and moves 3 (25 points). A **Kobold Champion** has a sword (1 white and 1 red), plate (1 white and 1 black) and 3 body points (55 points). A **Kobold Scout** fights like a kobold but moves 6 and sees 8 hexes (11 points). A **Kobold Archer** shoots a bow (1 white die, range 2 to 5; 14 points). A **Kobold Crossbow** wears leather and shoots a crossbow (1 white die, range 2 to 4) that **pierces armour**: the target rolls without its best defence die (16 points). Wounds stay: pips on a counter show the body points left.
+- **Units.** A Kobold (`K`) carries a dagger (1 white die, range 1). A Kobold Slinger (`S`) carries a sling (1 white die, range 2 to 3) and a dagger, and uses whichever reaches the target. Both defend with 1 white die and move 4. A kobold is worth 10 points and a slinger 12. A **Heavy Kobold** chops with an axe (1 red die), wears chain (defends with 1 white and 1 red), has 2 body points and moves 3 (25 points). A **Kobold Champion** has a sword (1 white and 1 red), plate (1 white and 1 black) and 3 body points (55 points). A **Kobold Scout** fights like a kobold but moves 6 and sees 8 hexes (11 points). A **Kobold Archer** shoots a bow (1 white die, range 2 to 5; 14 points). A **Kobold Crossbow** wears leather and shoots a crossbow (1 white die, range 2 to 4) that **pierces armour**: the target rolls without its best defence die (16 points). A **Kobold Pike** wears leather and carries a pike (1 red die, range 1) that **strikes first**: when an enemy steps next to it, the pike attacks at once, before the enemy can (once each enemy turn; 20 points). Hover an enemy pike to see whether it is still ready. Wounds stay: pips on a counter show the body points left.
 - **Armour** adds defence dice: leather 1 white, chain 1 red, plate 1 black, on top of a kobold's own hide (1 white).
 - **Terrain.** Entering grass costs 1 movement point, forest 2 and road 1. A step from road to road costs 1/2. Forest or an enemy unit between a slinger and its target blocks the shot; your own units do not.
 - **High ground.** Pale hexes with a dark rim are high ground. Climbing onto it costs 1 extra movement point (1/2 along a road). In melee the higher unit rolls with advantage, attacking or defending. A slinger on high ground reaches 4 hexes onto low ground. Hills block shots between two low hexes, and from high ground you can shoot over low forest and enemies.
@@ -26,7 +26,7 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 
 ## Scenarios
 
-Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, on maps that are 25, 50 or 75 percent forest, and on maps with some hills or hilly ones. The Kobold Warband: eight a side with a champion, two heavies, a kobold, a slinger, an archer, a crossbow and a scout. Two computer-against-computer battles: four against four, and twenty against twenty (15 kobolds and 5 slingers a side).
+Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, on maps that are 25, 50 or 75 percent forest, and on maps with some hills or hilly ones. The Kobold Warband: eight a side with a champion, two heavies, a pike, a slinger, an archer, a crossbow and a scout. Two computer-against-computer battles: four against four, and twenty against twenty (15 kobolds and 5 slingers a side).
 
 ## Build
 
@@ -35,7 +35,7 @@ Odin (`dev-2026-07` or newer) and Python 3 (the build packs the sprites with `to
 ```bash
 ./test.sh                      # rules tests, native
 ./build.sh                     # build/web (serve with: python3 -m http.server -d build/web 8123)
-tools/sim.sh 2k2s 4k -n 1000   # balance simulator: computer against computer (letters k s h c r a x; -nofog to turn fog off)
+tools/sim.sh 2k2s 4k -n 1000   # balance simulator: computer against computer (letters k s h c r a x p; -nofog to turn fog off)
 tools/pages.sh                 # size build copied into docs/ for GitHub Pages
 tools/shots.sh                 # assets/screenshots/ and assets/cover.png from the real build
 tools/ship.sh                  # itch.io zip; pushes only with --push
