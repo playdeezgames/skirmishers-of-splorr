@@ -25,6 +25,9 @@ foreign canvas {
 	set_alpha :: proc(a: f32) ---
 	// one of the WAVs in SOUND_FILES (web/index.html), by Sound index
 	play_sound :: proc(id: i32) ---
+	// sound on or off; the page remembers the choice in the browser
+	toggle_mute :: proc() ---
+	is_muted :: proc() -> b32 ---
 	// a sprite from art.png centred on (cx, cy), at a whole-number scale
 	blit :: proc(sprite: i32, cx, cy: f32, scale: f32) ---
 }
@@ -86,6 +89,7 @@ FORTIFIED_RING :: Color{0.92, 0.86, 0.7}
 // scenario picker, beside the scenario name: changing scenario starts a new game
 PREV_SCENARIO_BUTTON :: Button{PANEL_X, 41, 20, 18}
 NEXT_SCENARIO_BUTTON :: Button{PANEL_X + 24, 41, 20, 18}
+MUTE_BUTTON :: Button{PANEL_X + 292, 12, 84, 24}
 
 ctx: runtime.Context
 g: game.Game
@@ -190,6 +194,10 @@ mouse_click :: proc "c" (x, y: f32) {
 		start_game(scenario)
 		return
 	}
+	if in_button(MUTE_BUTTON, x, y) {
+		toggle_mute()
+		return
+	}
 	if in_button(PREV_SCENARIO_BUTTON, x, y) {
 		cycle_scenario(-1)
 		return
@@ -291,6 +299,8 @@ on_key :: proc(e: js.Event) {
 	case "v", "V":
 		if has_human() { return }
 		view_mode = View_Mode((int(view_mode) + 1) % len(View_Mode))
+	case "m", "M":
+		toggle_mute()
 	case "[":
 		cycle_scenario(-1)
 	case "]":
@@ -462,6 +472,7 @@ draw_map :: proc() {
 draw_panel :: proc() {
 	x := PANEL_X
 	text("Skirmishers of SPLORR!!", x, 24, 20, GOLD)
+	button(MUTE_BUTTON, "Sound: off" if is_muted() else "Sound: on", true)
 	button(PREV_SCENARIO_BUTTON, "<", true)
 	button(NEXT_SCENARIO_BUTTON, ">", true)
 	text(game.SCENARIOS[scenario].name, x + 52, 50, 13, GREY)
@@ -512,7 +523,7 @@ draw_panel :: proc() {
 		text("Kobolds carry daggers; slingers whirl slings.", x, y + 32, 13, GREY)
 		text("Pip: moved. Grey: done. Pale ring: fortified.", x, y + 48, 13, GREY)
 		text("D: fortify (before moving). F: finish move.", x, y + 64, 13, GREY)
-		text("Space: end turn. N: new game. [ ]: scenario.", x, y + 80, 13, GREY)
+		text("Space: end turn. N: new. [ ]: scenario. M: sound.", x, y + 80, 13, GREY)
 	}
 	view := viewer()
 	if hover.x >= 0 && !game.hex_seen(&g, view, hover) {

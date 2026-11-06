@@ -38,6 +38,9 @@
 		// presses something, so they are fetched and decoded on the first press.
 		const SOUND_FILES = ["step", "stab", "sling", "hit", "block", "slain", "fortify", "your_turn", "win", "lose"];
 		let audio = null, gain = null;
+		// mute (M or the Sound button) is remembered in this browser
+		let muted = false;
+		try { muted = localStorage.getItem("skirmishers.muted") === "1"; } catch (e) {}
 		const buffers = [];
 		const unlockAudio = () => {
 			if (audio) return;
@@ -52,7 +55,7 @@
 		addEventListener("keydown", unlockAudio);
 		addEventListener("pointerdown", unlockAudio);
 		const playSound = (id) => {
-			if (!audio || !buffers[id]) return;
+			if (muted || !audio || !buffers[id]) return;
 			const src = audio.createBufferSource();
 			src.buffer = buffers[id];
 			src.connect(gain);
@@ -96,6 +99,11 @@
 					g.drawImage(atlas, sprite * SPRITE, 0, SPRITE, SPRITE, Math.round(cx - s / 2), Math.round(cy - s / 2), s, s);
 				},
 				play_sound: (id) => playSound(id),
+				toggle_mute: () => {
+					muted = !muted;
+					try { localStorage.setItem("skirmishers.muted", muted ? "1" : "0"); } catch (e) {}
+				},
+				is_muted: () => muted,
 				draw_text: (ptr, len, x, y, size, r, gr, b, align) => {
 					g.font = `${size}px monospace`;
 					g.textAlign = ["left", "center", "right"][align] || "left";
