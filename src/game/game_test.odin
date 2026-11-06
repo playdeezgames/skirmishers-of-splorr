@@ -691,6 +691,7 @@ test_ai_fortifies_when_outranged :: proc(t: ^testing.T) {
 	g.current = 1
 	add_unit(&g, .Kobold_Slinger, 0, {5, 10})
 	k := add_unit(&g, .Kobold, 1, {11, 10}) // 6 away: cannot reach to stab, but the slinger can reach it
+	g.factions[1].ai = .Basic // the tactical style steps out of reach instead
 	start_faction_turn(&g)
 	ai_take_turn(&g)
 	testing.expect(t, g.units[k].fortified)
@@ -1004,4 +1005,89 @@ test_fog_off_sees_everything :: proc(t: ^testing.T) {
 	e := add_unit(&g, .Kobold, 1, {19, 19})
 	testing.expect(t, unit_visible(&g, e, 0))
 	testing.expect(t, hex_seen(&g, 0, {19, 19}))
+}
+
+// ---------------------------------------------------------------- tactical AI
+
+@(test)
+test_mask_grow_matches_distance :: proc(t: ^testing.T) {
+	for start in ([]Hex{{0, 0}, {7, 4}, {8, 5}, {19, 19}, {10, 0}, {0, 11}}) {
+		m: Hex_Mask
+		mask_set(&m, start)
+		for rings in 0 ..= 5 {
+			grown := mask_grow(m, rings)
+			for row in 0 ..< ROWS {
+				for col in 0 ..< COLS {
+					h := Hex{col, row}
+					testing.expectf(t, mask_has(&grown, h) == (hex_distance(start, h) <= rings), "start %v rings %d hex %v", start, rings, h)
+				}
+			}
+		}
+	}
+}
+
+@(test)
+test_tactical_steps_out_of_reach :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	s := add_unit(&g, .Kobold_Slinger, 0, {5, 10})
+	k := add_unit(&g, .Kobold, 1, {11, 10}) // the slinger could hit it next turn
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	testing.expect(t, !g.units[k].fortified)
+	threat := ai_threat_map(&g, 1)
+	testing.expect(t, !mask_has(threat, g.units[k].pos), "out of the slinger's reach")
+	testing.expect(t, hex_distance(g.units[s].pos, g.units[k].pos) <= 4 + 3 + 1, "but no further than it needs")
+}
+
+@(test)
+test_tactical_holds_then_advances :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold, 0, {2, 10})
+	k := add_unit(&g, .Kobold, 1, {11, 10}) // 9 away: a full move would put it in reach
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	// it stops at the edge of the kobold's reach (move 4 + dagger 1)
+	d := hex_distance(g.units[0].pos, g.units[k].pos)
+	testing.expect_value(t, d, 6)
+	testing.expectf(t, g.ai_held[1] == 1, "held %v holding %v pos %v", g.ai_held, g.ai_holding, g.units[k].pos)
+	// after HOLD_TURNS quiet turns it gives up waiting
+	for _ in 0 ..< HOLD_TURNS {
+		g.units[0].done = true
+		testing.expect(t, end_turn(&g)) // Red stays put
+		ai_take_turn(&g)
+	}
+	testing.expect(t, hex_distance(g.units[0].pos, g.units[k].pos) < 6, "advances in the end")
+}
+
+@(test)
+test_tactical_prefers_high_ground :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.current = 1
+	add_unit(&g, .Kobold, 0, {5, 10})
+	k := add_unit(&g, .Kobold, 1, {7, 10})
+	g.high[9][5] = true // a hill beside the enemy: stab down with advantage
+	start_faction_turn(&g)
+	ai_take_turn(&g)
+	testing.expect_value(t, g.units[k].pos, Hex{5, 9})
+}
+
+@(test)
+test_tactical_target_choice :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	k := add_unit(&g, .Kobold, 0, {5, 10})
+	fort := add_unit(&g, .Kobold, 1, {6, 10})
+	sl := add_unit(&g, .Kobold_Slinger, 1, {4, 10})
+	g.units[fort].fortified = true
+	testing.expect_value(t, ai_tactical_target(&g, k), sl) // not the fortified one, and a slinger
+	g.units[fort].fortified = false
+	testing.expect_value(t, ai_tactical_target(&g, k), sl) // a slinger before a kobold
+	g.units[sl].kind = .Kobold
+	g.high[10][4] = true // now it holds the high ground
+	testing.expect_value(t, ai_tactical_target(&g, k), fort)
 }

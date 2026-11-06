@@ -20,6 +20,9 @@ options:
   -forest P   make P percent of the map forest (0-90); default: the standard
               light clumps (about 10-15%)
   -hills P    raise P percent of the map as high ground (0-90; default 0)
+  -red S      computer style for red: tactical (default) or basic (the
+              first computer player, kept for comparison)
+  -blue S     the same for blue
   -nofog      everyone sees everything (fog of war is on by default, as in
               the game), for comparing with results from before fog
 Units are placed in columns of up to 10 rows, rear first: slingers nearest the
@@ -70,7 +73,7 @@ Totals :: struct {
 	fortifies:    [2]int,
 }
 
-play :: proc(red, blue: ^Army, first, inset, forest, hills: int, fog: bool, seed: u64, t: ^Totals) {
+play :: proc(red, blue: ^Army, first, inset, forest, hills: int, fog: bool, styles: [2]game.Ai_Style, seed: u64, t: ^Totals) {
 	g: game.Game
 	g.winner = -1
 	g.turn = 1
@@ -80,8 +83,8 @@ play :: proc(red, blue: ^Army, first, inset, forest, hills: int, fog: bool, seed
 		game.generate_clumped_forest(&g, 9, 3, 9)
 	}
 	game.generate_road(&g, game.Road_Direction(game.rng_int(&g.rng, len(game.Road_Direction))))
-	game.add_faction(&g, "Red", .Computer, game.RED)
-	game.add_faction(&g, "Blue", .Computer, game.BLUE)
+	game.add_faction(&g, "Red", .Computer, game.RED, styles[0])
+	game.add_faction(&g, "Blue", .Computer, game.BLUE, styles[1])
 	game.place_block(&g, 0, red.kinds[:red.count], true, inset)
 	game.place_block(&g, 1, blue.kinds[:blue.count], false, inset)
 	if forest >= 0 { game.grow_forest_to(&g, forest) }
@@ -134,6 +137,7 @@ main :: proc() {
 	games, inset, seed, forest, hills := 500, 1, 1000, -1, 0
 	first_mode := "alt"
 	fog := true
+	styles: [2]game.Ai_Style
 	for i := 0; i < len(args); i += 1 {
 		a := args[i]
 		if a == "-nofog" {
@@ -153,6 +157,10 @@ main :: proc() {
 			case "-hills":
 				hills, ok = strconv.parse_int(v)
 				ok = ok && hills >= 0 && hills <= 90
+			case "-red", "-blue":
+				st, sok := parse_style(v)
+				ok = sok
+				styles[0 if a == "-red" else 1] = st
 			case "-first": first_mode = v; ok = v == "red" || v == "blue" || v == "alt"
 			case:          ok = false
 			}
@@ -173,7 +181,7 @@ main :: proc() {
 		case "blue": first = 1
 		case "alt":  first = i % 2
 		}
-		play(&red, &blue, first, inset, forest, hills, fog, u64(seed + i), &t)
+		play(&red, &blue, first, inset, forest, hills, fog, styles, u64(seed + i), &t)
 	}
 
 	decided := t.wins[0] + t.wins[1]
@@ -185,6 +193,7 @@ main :: proc() {
 	}
 	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s, hills %d%%, fog %s",
 		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text, hills, "on" if fog else "off")
+	fmt.printfln("  styles: red %v, blue %v", styles[0], styles[1])
 	fmt.printfln("  red wins  %5.1f%%   avg survivors %.1f of %d", pct(t.wins[0], games), f64(t.survivors[0]) / f64(max(t.wins[0], 1)), red.count)
 	fmt.printfln("  blue wins %5.1f%%   avg survivors %.1f of %d", pct(t.wins[1], games), f64(t.survivors[1]) / f64(max(t.wins[1], 1)), blue.count)
 	if t.draws > 0 { fmt.printfln("  unfinished %d", t.draws) }
@@ -201,4 +210,12 @@ main :: proc() {
 				t.attacks[f][w], t.kills[f][w], pct(t.kills[f][w], t.attacks[f][w]))
 		}
 	}
+}
+
+parse_style :: proc(s: string) -> (game.Ai_Style, bool) {
+	switch s {
+	case "tactical": return .Tactical, true
+	case "basic":    return .Basic, true
+	}
+	return .Tactical, false
 }

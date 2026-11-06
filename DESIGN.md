@@ -86,7 +86,28 @@ results exactly.
 
 - Improve it **after elevation and fog** (they change what good play is), using
   the simulator: hold just out of enemy reach to win the first strike, prefer
-  high ground and forest.
+  high ground and forest. **Built November 6, 2026** as the "tactical" style;
+  the old AI stays as "basic" for the simulator (`-red basic`).
+
+What was built and what the simulator found (tactical blue vs basic red):
+
+- Before contact, units hold outside the hexes any known enemy could attack
+  next turn. Holding stops once anyone attacks (otherwise units already
+  fighting are left alone: dense-forest games dragged to 16 turns and tactical
+  lost 45%), and after 2 quiet turns, so two careful sides cannot stall.
+- Ties between equally good hexes go to safe hexes, high ground, then forest.
+  Targets: not fortified, not uphill, slingers first.
+- With no enemy known, the scout would rather stop in forest (hidden beyond 2
+  hexes) than gain 2 more hexes. Advancing at half speed when blind was tried
+  and lost ground (50%).
+- Results, 400 games each: 4k 54%, 2k2s 53%, 2k2s on 35% hills 55%, 2k2s in
+  50% forest 54%; 15k5s about even (48%, 300 games). Tactical against itself
+  stays even and every game finishes.
+- **Making the first attack is worth less than expected:** one variant made
+  the first attack in 74% of games and still won only 52%. A dagger blow kills
+  2 times in 9, and the whole line strikes back next turn. Bigger gains would
+  need new ideas (screening slingers behind kobolds, ganging up), or rules that
+  make the first blow count for more.
 
 ## Release standard
 
@@ -102,6 +123,6 @@ results exactly.
 2. Enemies block line of sight; 15k5s battle; points cost (simulator). **Done November 5, 2026.**
 3. Elevation. **Done November 6, 2026.**
 4. Fog of war. **Done November 6, 2026.**
-5. Computer player improvements.
+5. Computer player improvements. **Done November 6, 2026.**
 6. Move animation; Anvil art and sound.
 7. Tap to inspect (check on a touch-size screen).

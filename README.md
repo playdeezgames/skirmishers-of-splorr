@@ -4,7 +4,7 @@ A hex-and-counter wargame in the browser. You command a band of kobolds against 
 
 **Play: https://playdeezgames.github.io/skirmishers-of-splorr/**
 
-Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code, the rules text, the screenshots and this README. See [DESIGN.md](DESIGN.md) for the designer's decisions, including what is planned but not built yet (smarter computer play, animation, art and sound).
+Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code, the rules text, the screenshots and this README. See [DESIGN.md](DESIGN.md) for the designer's decisions, including what is planned but not built yet (animation, art and sound).
 
 ## Rules
 

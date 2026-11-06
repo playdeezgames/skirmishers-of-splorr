@@ -13,11 +13,18 @@ ai_step :: proc(g: ^Game) -> bool {
 	for i in 0 ..< g.unit_count {
 		u := &g.units[i]
 		if u.alive && u.faction == g.current && !u.done {
-			ai_unit(g, i)
+			if g.factions[g.current].ai == .Basic {
+				ai_unit(g, i)
+			} else {
+				ai_tactical_unit(g, i)
+			}
 			u.done = true
 			return true
 		}
 	}
+	f := g.current
+	g.ai_held[f] = g.ai_held[f] + 1 if g.ai_holding[f] else 0
+	g.ai_holding[f] = false
 	return end_turn(g)
 }
 
@@ -30,7 +37,7 @@ ai_take_turn :: proc(g: ^Game) {
 	}
 }
 
-// The living enemy in range with the fewest body points, or -1.
+// The living enemy in range with the fewest body points, or -1 (basic style).
 ai_pick_target :: proc(g: ^Game, unit: int) -> int {
 	best := -1
 	for i in 0 ..< g.unit_count {
@@ -194,4 +201,235 @@ ai_threatened :: proc(g: ^Game, unit: int) -> bool {
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------- tactical style
+
+// The tactical computer player:
+//   - It keeps out of the enemy's reach until it can strike first: a hex no
+//     known enemy could attack next turn ("safe") beats any hex closer in that
+//     is not, unless the unit can attack from it. After HOLD_TURNS turns in a
+//     row of holding back with no attack by anyone it advances anyway, so two
+//     careful sides cannot wait for ever.
+//   - Among equally good hexes it prefers safe ones, high ground (melee
+//     advantage, longer sling shots) and forest (hidden beyond 2 hexes, and
+//     shots cannot pass through it), then the cheapest move.
+//   - It attacks the target it is likeliest to hurt: not fortified, not holding
+//     the high ground against it, a slinger before a kobold.
+//   - It fortifies only when it cannot get out of reach and cannot attack.
+//   - With no enemy known, its scout would rather end in forest (hidden beyond
+//     2 hexes) than gain SCOUT_COVER more hexes.
+// Holding back stops once anyone has attacked in the last round: by then it
+// would leave the units already fighting on their own.
+// Simulator, November 6, 2026 (tactical blue vs basic red, 400 games each):
+// 4k 54%, 2k2s 53%, 2k2s on 35% hills 55%, 2k2s in 50% forest 54%; 15k5s 48%
+// (300 games, about even). Making the first attack is worth less than it
+// looks: one dagger blow kills 2 times in 9, and the whole line strikes back.
+
+HOLD_TURNS :: 2
+SCOUT_COVER :: 2 // hexes of progress a scout gives up to end its move in forest
+
+// Hexes some known enemy (in sight, or at its last-seen marker) could attack next turn: from every hex it could
+// reach with its full movement, everything within its longest reach (half
+// again from high ground for ranged weapons). Line of sight is ignored, so
+// this errs on the side of caution. Cached until the turn, the known enemies
+// or the living units change.
+Ai_Threat :: struct {
+	mask:  Hex_Mask,
+	key:   [4]u64, // turn and side to move, known enemies, living units, where
+	ready: bool,
+}
+
+ai_threat_map :: proc(g: ^Game, faction: int) -> ^Hex_Mask {
+	// each known enemy, where it is or was last seen
+	believed: [MAX_UNITS]Hex
+	known, living, places: u64
+	for i in 0 ..< g.unit_count {
+		u := &g.units[i]
+		if !u.alive { continue }
+		living |= 1 << u64(i)
+		if u.faction == faction { continue }
+		pos, seen := u.pos, unit_visible(g, i, faction)
+		if !seen { pos, seen = sighting(g, faction, i) }
+		if !seen { continue }
+		known |= 1 << u64(i)
+		believed[i] = pos
+		places = places * 31 + u64(pos.y * COLS + pos.x) + 1
+	}
+	key := [4]u64{u64(g.turn) << 8 | u64(g.current), known, living, places}
+	t := &g.ai_threat[faction]
+	if t.ready && t.key == key { return &t.mask }
+	t.mask = {}
+	for i in 0 ..< g.unit_count {
+		if known & (1 << u64(i)) == 0 { continue }
+		area := ai_enemy_reach(g, faction, i, believed[i])
+		for r in 0 ..< ROWS { t.mask[r] |= area[r] }
+	}
+	t.key = key
+	t.ready = true
+	return &t.mask
+}
+
+// One enemy's share of the threat map, cached for the turn while it is
+// believed to stand on the same hex (our own units moving can change its
+// paths a little; that is ignored until the next turn).
+Ai_Reach :: struct {
+	mask: Hex_Mask,
+	key:  [3]int, // turn, side to move, believed hex (as an index)
+	ready: bool,
+}
+
+ai_enemy_reach :: proc(g: ^Game, faction, i: int, at: Hex) -> Hex_Mask {
+	key := [3]int{g.turn, g.current, at.y * COLS + at.x}
+	cache := &g.ai_reach[faction][i]
+	if cache.ready && cache.key == key { return cache.mask }
+	e := &g.units[i]
+	et := unit_type(e)
+	_, reach := unit_reach(et)
+	budget := et.move * HALVES_PER_POINT
+	// plan from where we believe it is
+	real := e.pos
+	e.pos = at
+	costs := movement_costs(g, i, faction)
+	e.pos = real
+	// where it can stand, grown by its reach (half again from high ground for
+	// a ranged weapon)
+	stand: Hex_Mask
+	for row in 0 ..< ROWS {
+		for col in 0 ..< COLS {
+			c := costs[row][col]
+			if c != UNREACHABLE && c <= budget { mask_set(&stand, Hex{col, row}) }
+		}
+	}
+	area := mask_grow(stand, reach)
+	if reach > 1 {
+		high := mask_grow(mask_from(g, &stand, true), reach * 3 / 2)
+		for r in 0 ..< ROWS { area[r] |= high[r] }
+	}
+	cache^ = {area, key, true}
+	return area
+}
+
+// The hexes of m on high ground (high = true) or low ground.
+mask_from :: proc(g: ^Game, m: ^Hex_Mask, high: bool) -> (out: Hex_Mask) {
+	for row in 0 ..< ROWS {
+		for col in 0 ..< COLS {
+			h := Hex{col, row}
+			if mask_has(m, h) && is_high(g, h) == high { mask_set(&out, h) }
+		}
+	}
+	return
+}
+
+// m plus every hex within `rings` steps of a hex in m. Done on the bits: on
+// this staggered map a hex's neighbours are the two beside it, and in the rows
+// above and below the hex itself and the one to its left (even rows) or right
+// (odd rows).
+mask_grow :: proc(m: Hex_Mask, rings: int) -> Hex_Mask {
+	FULL :: u32(1 << COLS) - 1
+	m := m
+	for _ in 0 ..< rings {
+		out: Hex_Mask
+		for row in 0 ..< ROWS {
+			r := m[row]
+			if r == 0 { continue }
+			out[row] |= r | (r << 1) | (r >> 1)
+			// in an odd row the hexes above and below sit at col and col+1;
+			// in an even row at col-1 and col
+			spread := r | (r << 1) if row % 2 == 1 else r | (r >> 1)
+			if row > 0 { out[row - 1] |= spread }
+			if row < ROWS - 1 { out[row + 1] |= spread }
+		}
+		for row in 0 ..< ROWS { out[row] &= FULL }
+		m = out
+	}
+	return m
+}
+
+// Score of a hex for the tactical style: lower is better, compared in order.
+//   [0] what the unit can do from it: 0 ranged shot with no enemy adjacent,
+//       1 any attack, 2+ approach (2 + distance as in ai_hex_score), and
+//       HOLD_PENALTY more for an approach hex inside the threat map while
+//       holding back
+//   [1] minus its terrain bonus (safe 4, high ground 2, forest 1)
+//   [2] movement cost
+HOLD_PENALTY :: 1000
+
+ai_tactical_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: ^Ai_View, threat: ^Hex_Mask, hold: bool) -> [2]int {
+	what := ai_hex_score(g, faction, ut, h, view)
+	unsafe := mask_has(threat, h)
+	if what >= 2 && unsafe && hold { what += HOLD_PENALTY }
+	// a scout in forest sees out but is hidden beyond FOREST_SIGHT: worth a
+	// little ground
+	if what >= 2 && view.spot_count == 0 && view.is_scout && terrain_at(g, h) == .Forest { what -= SCOUT_COVER }
+	bonus := 0
+	if !unsafe { bonus += 4 }
+	if is_high(g, h) { bonus += 2 }
+	if terrain_at(g, h) == .Forest { bonus += 1 }
+	return {what, -bonus}
+}
+
+ai_tactical_unit :: proc(g: ^Game, unit: int) {
+	u := &g.units[unit]
+	ut := unit_type(u)
+	f := u.faction
+	view := ai_view(g, unit)
+	threat := ai_threat_map(g, f)
+	// hold back only from enemies it knows of, before the fighting starts (once
+	// it has, holding back would leave the units in it to fight alone), and
+	// not for ever
+	in_contact := g.contact_turn > 0 && g.turn - g.contact_turn <= 1
+	hold := view.spot_count > 0 && !in_contact && g.ai_held[f] < HOLD_TURNS
+	costs := movement_costs(g, unit)
+	best := u.pos
+	s := ai_tactical_score(g, f, ut, u.pos, &view, threat, hold)
+	best_score := [3]int{s.x, s.y, 0}
+	closest_unsafe := max(int) // nearest approach hex given up for safety
+	for row in 0 ..< ROWS {
+		for col in 0 ..< COLS {
+			h := Hex{col, row}
+			if !can_move(g, unit, h, &costs) { continue }
+			s = ai_tactical_score(g, f, ut, h, &view, threat, hold)
+			if s.x >= HOLD_PENALTY { closest_unsafe = min(closest_unsafe, s.x - HOLD_PENALTY) }
+			score := [3]int{s.x, s.y, costs[row][col]}
+			if score.x < best_score.x || (score.x == best_score.x && (score.y < best_score.y || (score.y == best_score.y && score.z < best_score.z))) {
+				best = h
+				best_score = score
+			}
+		}
+	}
+	if best_score.x >= 2 && best_score.x < HOLD_PENALTY && closest_unsafe < best_score.x {
+		g.ai_holding[f] = true // it could have gone closer, but waited
+	}
+	// cannot attack and cannot get out of reach: dig in
+	if best_score.x >= HOLD_PENALTY || (best_score.x >= 2 && !hold && mask_has(threat, best)) {
+		if can_fortify(g, unit) && ai_threatened(g, unit) {
+			fortify(g, unit)
+			return
+		}
+	}
+	if best != u.pos { move_unit(g, unit, best) }
+	if t := ai_tactical_target(g, unit); t >= 0 { attack(g, unit, t) }
+}
+
+// The target the unit is likeliest to hurt (see ai_tactical_unit), or -1.
+ai_tactical_target :: proc(g: ^Game, unit: int) -> int {
+	a := &g.units[unit]
+	best, best_score := -1, min(int)
+	for i in 0 ..< g.unit_count {
+		w, ok := attack_weapon(g, unit, i)
+		if !ok { continue }
+		t := &g.units[i]
+		atk_adv, def_adv := combat_advantage(g, a.pos, t.pos, t.fortified)
+		score := dice_strength(WEAPONS[w].attack) * 4 - dice_strength(unit_type(t).defense) * 4 - t.body * 8
+		if def_adv { score -= 3 }
+		if atk_adv { score += 2 }
+		_, reach := unit_reach(unit_type(t))
+		if reach > 1 { score += 1 } // ranged enemies first
+		if score > best_score {
+			best = i
+			best_score = score
+		}
+	}
+	return best
 }

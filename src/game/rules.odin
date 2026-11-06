@@ -180,10 +180,18 @@ Controller :: enum u8 {
 	Computer,
 }
 
+// How a computer faction plays (ai.odin). Tactical is the default; Basic is
+// the first computer player, kept so tools/sim.sh can measure against it.
+Ai_Style :: enum u8 {
+	Tactical,
+	Basic,
+}
+
 Faction :: struct {
 	name:       string,
 	controller: Controller,
 	color:      [3]f32,
+	ai:         Ai_Style,
 }
 
 // ---------------------------------------------------------------- game state
@@ -222,6 +230,12 @@ Game :: struct {
 	in_view:       [MAX_FACTIONS]Hex_Mask, // in sight now
 	watched:       [MAX_FACTIONS]Hex_Mask, // a unit here would be seen now
 	last_seen:     [MAX_FACTIONS][MAX_UNITS]Sighting,
+	// tactical computer player (ai.odin)
+	ai_held:       [MAX_FACTIONS]int, // turns in a row it held back from the enemy's reach
+	contact_turn:  int, // round of the latest attack by anyone (0: none yet)
+	ai_holding:    [MAX_FACTIONS]bool, // some unit held back this turn
+	ai_threat:     [MAX_FACTIONS]Ai_Threat, // cached threat maps
+	ai_reach:      [MAX_FACTIONS][MAX_UNITS]Ai_Reach, // cached per enemy
 	view_cache:    [Unit_Kind][ROWS][COLS]Cached_View, // terrain never changes in a game
 }
 
@@ -273,9 +287,9 @@ add_unit :: proc(g: ^Game, kind: Unit_Kind, faction: int, pos: Hex) -> int {
 	return idx
 }
 
-add_faction :: proc(g: ^Game, name: string, controller: Controller, color: [3]f32) -> int {
+add_faction :: proc(g: ^Game, name: string, controller: Controller, color: [3]f32, ai := Ai_Style.Tactical) -> int {
 	assert(g.faction_count < MAX_FACTIONS)
-	g.factions[g.faction_count] = {name, controller, color}
+	g.factions[g.faction_count] = {name, controller, color, ai}
 	g.faction_count += 1
 	return g.faction_count - 1
 }
@@ -597,6 +611,8 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement
+	g.ai_held = {} // contact: nobody is holding back any more
+	g.contact_turn = g.turn
 	a.done = true
 	g.attacks[a.faction][weapon] += 1
 	t.body -= res.damage
