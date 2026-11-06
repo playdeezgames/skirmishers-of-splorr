@@ -26,8 +26,10 @@ new_game :: proc(g: ^Game, scenario: int, seed: u64) {
 	g.winner = -1
 	g.turn = 1
 	g.rng = {seed}
+	g.fog = true // fog of war in every scenario
 	SCENARIOS[scenario].setup(g)
 	start_faction_turn(g)
+	update_vision(g, NO_FACTION)
 	add_log(g, "%s: turn 1", SCENARIOS[scenario].name)
 }
 

@@ -20,6 +20,8 @@ options:
   -forest P   make P percent of the map forest (0-90); default: the standard
               light clumps (about 10-15%)
   -hills P    raise P percent of the map as high ground (0-90; default 0)
+  -nofog      everyone sees everything (fog of war is on by default, as in
+              the game), for comparing with results from before fog
 Units are placed in columns of up to 10 rows, rear first: slingers nearest the
 edge, daggers in front. Maps are grass, forest clumps and one road.`
 
@@ -68,11 +70,12 @@ Totals :: struct {
 	fortifies:    [2]int,
 }
 
-play :: proc(red, blue: ^Army, first, inset, forest, hills: int, seed: u64, t: ^Totals) {
+play :: proc(red, blue: ^Army, first, inset, forest, hills: int, fog: bool, seed: u64, t: ^Totals) {
 	g: game.Game
 	g.winner = -1
 	g.turn = 1
 	g.rng = {seed}
+	g.fog = fog
 	if forest < 0 {
 		game.generate_clumped_forest(&g, 9, 3, 9)
 	}
@@ -85,6 +88,7 @@ play :: proc(red, blue: ^Army, first, inset, forest, hills: int, seed: u64, t: ^
 	if hills > 0 { game.grow_hills_to(&g, hills) }
 	g.current = first
 	game.start_faction_turn(&g)
+	game.update_vision(&g, game.NO_FACTION)
 
 	first_attack, first_blood := -1, -1
 	start := [2]int{red.count, blue.count}
@@ -129,9 +133,12 @@ main :: proc() {
 	positional: [dynamic]string
 	games, inset, seed, forest, hills := 500, 1, 1000, -1, 0
 	first_mode := "alt"
+	fog := true
 	for i := 0; i < len(args); i += 1 {
 		a := args[i]
-		if strings.has_prefix(a, "-") {
+		if a == "-nofog" {
+			fog = false
+		} else if strings.has_prefix(a, "-") {
 			if i + 1 >= len(args) { fmt.eprintln(USAGE); os.exit(2) }
 			v := args[i + 1]
 			i += 1
@@ -166,7 +173,7 @@ main :: proc() {
 		case "blue": first = 1
 		case "alt":  first = i % 2
 		}
-		play(&red, &blue, first, inset, forest, hills, u64(seed + i), &t)
+		play(&red, &blue, first, inset, forest, hills, fog, u64(seed + i), &t)
 	}
 
 	decided := t.wins[0] + t.wins[1]
@@ -176,8 +183,8 @@ main :: proc() {
 		for k in a.kinds[:a.count] { n += game.UNIT_TYPES[k].points }
 		return n
 	}
-	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s, hills %d%%",
-		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text, hills)
+	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s, hills %d%%, fog %s",
+		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text, hills, "on" if fog else "off")
 	fmt.printfln("  red wins  %5.1f%%   avg survivors %.1f of %d", pct(t.wins[0], games), f64(t.survivors[0]) / f64(max(t.wins[0], 1)), red.count)
 	fmt.printfln("  blue wins %5.1f%%   avg survivors %.1f of %d", pct(t.wins[1], games), f64(t.survivors[1]) / f64(max(t.wins[1], 1)), blue.count)
 	if t.draws > 0 { fmt.printfln("  unfinished %d", t.draws) }

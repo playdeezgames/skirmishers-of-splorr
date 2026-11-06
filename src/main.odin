@@ -58,6 +58,13 @@ scenario := 0
 selected := -1
 hover := game.Hex{-1, -1}
 ai_timer: f64
+// computer-vs-computer only: whose fog the map shows (V cycles it)
+View_Mode :: enum {
+	Everything,
+	Red,
+	Blue,
+}
+view_mode := View_Mode.Everything
 
 main :: proc() {
 	ctx = context
@@ -87,6 +94,27 @@ debug_ai_steps :: proc "c" (n: i32) {
 	for _ in 0 ..< n {
 		if !game.ai_step(&g) { break }
 	}
+}
+
+// The side whose view the map shows: the human player's, or in a game with no
+// human, the one picked with V (NO_FACTION shows everything).
+viewer :: proc() -> int {
+	for i in 0 ..< g.faction_count {
+		if g.factions[i].controller == .Human { return i }
+	}
+	switch view_mode {
+	case .Red:  return 0
+	case .Blue: return 1 if g.faction_count > 1 else 0
+	case .Everything:
+	}
+	return game.NO_FACTION
+}
+
+has_human :: proc() -> bool {
+	for i in 0 ..< g.faction_count {
+		if g.factions[i].controller == .Human { return true }
+	}
+	return false
 }
 
 human_turn :: proc() -> bool {
@@ -212,6 +240,9 @@ on_key :: proc(e: js.Event) {
 		selected = -1
 	case "n", "N":
 		start_game(scenario)
+	case "v", "V":
+		if has_human() { return }
+		view_mode = View_Mode((int(view_mode) + 1) % len(View_Mode))
 	case "[":
 		cycle_scenario(-1)
 	case "]":
@@ -270,13 +301,21 @@ step :: proc(dt: f64, c: runtime.Context) -> bool {
 	return true
 }
 
+UNEXPLORED :: Color{0.07, 0.07, 0.09}
+
 draw_map :: proc() {
+	view := viewer()
 	costs: [game.ROWS][game.COLS]int
 	if selected >= 0 { costs = game.movement_costs(&g, selected) }
 	for row in 0 ..< game.ROWS {
 		for col in 0 ..< game.COLS {
 			h := game.Hex{col, row}
 			p := hex_centre(h)
+			if !game.hex_seen(&g, view, h) {
+				// never seen: no terrain shown
+				draw_hex(p.x, p.y, HEX_R, UNEXPLORED.r, UNEXPLORED.g, UNEXPLORED.b, 1, 1, 1, 1, 0.06, 1)
+				continue
+			}
 			t := game.terrain_at(&g, h)
 			fill: Color
 			switch t {
@@ -292,14 +331,29 @@ draw_map :: proc() {
 				text("♣", p.x - 5, p.y - 3, 11, TREE, 1)
 				text("♣", p.x + 5, p.y + 5, 11, TREE, 1)
 			}
+			if !game.hex_in_view(&g, view, h) {
+				// explored but out of sight now: dimmed
+				draw_hex(p.x, p.y, HEX_R, 0.05, 0.05, 0.08, 0.5, 0, 0, 0, 0, 0)
+			}
 			if selected >= 0 && game.can_move(&g, selected, h, &costs) {
 				draw_hex(p.x, p.y, HEX_R - 2, 1, 1, 0.6, 0.3, 0, 0, 0, 0, 0)
 			}
 		}
 	}
+	// last-seen markers: a faded counter with a question mark
+	if view != game.NO_FACTION {
+		for i in 0 ..< g.unit_count {
+			pos, ok := game.sighting(&g, view, i)
+			if !ok { continue }
+			p := hex_centre(pos)
+			col := g.factions[g.units[i].faction].color * 0.35 + Color{0.25, 0.25, 0.28}
+			draw_circle(p.x, p.y, HEX_R * 0.5, col.r, col.g, col.b, 0.6, 0.6, 0.65, 1)
+			text("?", p.x, p.y + 1, 12, Color{0.85, 0.85, 0.88}, 1)
+		}
+	}
 	for i in 0 ..< g.unit_count {
 		u := &g.units[i]
-		if !u.alive { continue }
+		if !u.alive || !game.unit_visible(&g, i, view) { continue }
 		p := hex_centre(u.pos)
 		col := g.factions[u.faction].color
 		finished := game.unit_finished(&g, i)
@@ -339,6 +393,10 @@ draw_panel :: proc() {
 	button(PREV_SCENARIO_BUTTON, "<", true)
 	button(NEXT_SCENARIO_BUTTON, ">", true)
 	text(game.SCENARIOS[scenario].name, x + 52, 50, 13, GREY)
+	if !has_human() {
+		names := [View_Mode]string{.Everything = "everything", .Red = "Red's view", .Blue = "Blue's view"}
+		text(fmt.tprintf("Map shows %s (V to change)", names[view_mode]), x, 102, 13, GREY)
+	}
 
 	f := &g.factions[g.current]
 	status: string
@@ -357,7 +415,7 @@ draw_panel :: proc() {
 		u := &g.units[selected]
 		ut := game.unit_type(u)
 		text(fmt.tprintf("%s %s (%d points)", g.factions[u.faction].name, ut.name, ut.points), x, y, 15)
-		text(fmt.tprintf("Defence %s   Body %d/%d   Move %s/%d", dice_text(ut.defense), u.body, ut.body, points_text(u.moves_left), ut.move), x, y + 20, 13, GREY)
+		text(fmt.tprintf("Defence %s   Body %d/%d   Move %s/%d   Sight %d", dice_text(ut.defense), u.body, ut.body, points_text(u.moves_left), ut.move, ut.vision), x, y + 20, 13, GREY)
 		wy := y + 38
 		for w in ut.weapons {
 			wp := &game.WEAPONS[w]
@@ -378,18 +436,21 @@ draw_panel :: proc() {
 		text(state, x, wy, 13, GREY)
 	} else if human_turn() {
 		text("Click one of your units to select it.", x, y, 13, GREY)
-		text("Yellow hexes: moves. Red outline: targets.", x, y + 16, 13, GREY)
+		text("Yellow: moves. Red: targets. ?: last seen.", x, y + 16, 13, GREY)
 		text("K: kobold (dagger). S: slinger (sling, dagger).", x, y + 32, 13, GREY)
 		text("Pip: moved. Grey: done. Pale ring: fortified.", x, y + 48, 13, GREY)
 		text("D: fortify (before moving). F: finish move.", x, y + 64, 13, GREY)
 		text("Space: end turn. N: new game. [ ]: scenario.", x, y + 80, 13, GREY)
 	}
-	if hover.x >= 0 {
+	view := viewer()
+	if hover.x >= 0 && !game.hex_seen(&g, view, hover) {
+		text(fmt.tprintf("Hex %d,%d: unexplored", hover.x, hover.y), x, 210, 13, GREY)
+	} else if hover.x >= 0 {
 		t := game.terrain_at(&g, hover)
 		cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
 		if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road, false, false))) }
 		text(fmt.tprintf("Hex %d,%d: %s%s (%s)", hover.x, hover.y, game.is_high(&g, hover) ? "high " : "", game.TERRAIN_NAMES[t], cost), x, 210, 13, GREY)
-		if hu := game.unit_at(&g, hover); hu >= 0 {
+		if hu := game.unit_at(&g, hover); hu >= 0 && game.unit_visible(&g, hu, view) {
 			u := &g.units[hu]
 			label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
 			// explain a shot the selected unit cannot take because of forest
@@ -401,6 +462,15 @@ draw_panel :: proc() {
 				}
 			}
 			text(label, x, 228, 13, g.factions[u.faction].color)
+		} else if view != game.NO_FACTION {
+			for i in 0 ..< g.unit_count {
+				if pos, ok := game.sighting(&g, view, i); ok && pos == hover {
+					fc := &g.factions[g.units[i].faction]
+					text(fmt.tprintf("%s %s last seen here", fc.name, game.unit_type(&g.units[i]).name), x, 228, 13, fc.color)
+					break
+				}
+			}
+			if !game.hex_in_view(&g, view, hover) { text("out of sight", x + 260, 228, 11, GREY) }
 		}
 	}
 

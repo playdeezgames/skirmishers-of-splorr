@@ -19,6 +19,7 @@ A hex-and-counter wargame for one player. You command a band of kobolds against 
 - Attackers roll attack dice, defenders roll defence dice, and every hit not blocked costs a body point. Kobolds have one.
 - Kobolds stab with daggers. Kobold Slingers sling from 2 or 3 hexes away, and fall back on their daggers up close.
 - Forest is slow going and blocks sling shots. Roads are quick.
+- Fog of war: you see only what your kobolds see. Enemies hide in the woods until you are close, and the computer knows no more than its own scouts do.
 - Each unit moves, then may attack. Or it can fortify and dig in: until your next turn, every failed defence die is rolled again.
 
 **Controls**

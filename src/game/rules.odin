@@ -131,6 +131,7 @@ Unit_Type :: struct {
 	body:    int, // body points; the unit dies at 0
 	move:    int, // movement points per turn
 	points:  int, // army-building cost; set with tools/sim.sh so equal points fight about even
+	vision:  int, // hexes it sees under fog of war (fog.odin)
 }
 
 UNIT_TYPES := [Unit_Kind]Unit_Type {
@@ -142,6 +143,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		body = 1,
 		move = 4,
 		points = 10,
+		vision = 5,
 	},
 	.Kobold_Slinger = {
 		name = "Kobold Slinger",
@@ -151,6 +153,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		body = 1,
 		move = 4,
 		points = 12, // worth about 1.2 kobolds (simulator, November 5, 2026)
+		vision = 7,
 	},
 }
 
@@ -213,6 +216,13 @@ Game :: struct {
 	attacks:       [MAX_FACTIONS][Weapon_Kind]int,
 	kills:         [MAX_FACTIONS][Weapon_Kind]int,
 	fortifies:     [MAX_FACTIONS]int,
+	// fog of war (fog.odin); off unless new_game or the simulator turns it on
+	fog:           bool,
+	seen:          [MAX_FACTIONS]Hex_Mask, // explored
+	in_view:       [MAX_FACTIONS]Hex_Mask, // in sight now
+	watched:       [MAX_FACTIONS]Hex_Mask, // a unit here would be seen now
+	last_seen:     [MAX_FACTIONS][MAX_UNITS]Sighting,
+	view_cache:    [Unit_Kind][ROWS][COLS]Cached_View, // terrain never changes in a game
 }
 
 add_log :: proc(g: ^Game, format: string, args: ..any) {
@@ -292,17 +302,23 @@ living_units :: proc(g: ^Game, faction: int) -> int {
 
 UNREACHABLE :: -1
 
+OWN_VIEW :: -2
+
 // Cheapest movement cost, in half points, from the unit's hex to every hex, ignoring its
 // remaining points (UNREACHABLE where there is no way in). Units may pass through
 // friends but not enemies; whether a hex can be stopped on is can_move's job.
-movement_costs :: proc(g: ^Game, unit: int) -> (cost: [ROWS][COLS]int) {
+// Under fog only the enemies `viewer` can see block the search (OWN_VIEW: the
+// unit's own side), so planning never uses hidden units; move_unit stops a move
+// that runs into one.
+movement_costs :: proc(g: ^Game, unit: int, viewer := OWN_VIEW) -> (cost: [ROWS][COLS]int) {
 	u := &g.units[unit]
+	who := u.faction if viewer == OWN_VIEW else viewer
 	for &row in cost { for &c in row { c = UNREACHABLE } }
 	// who stands where, so the search does not rescan the unit list
 	blocked: [ROWS][COLS]bool
 	for i in 0 ..< g.unit_count {
 		o := &g.units[i]
-		if o.alive && o.faction != u.faction { blocked[o.pos.y][o.pos.x] = true }
+		if o.alive && o.faction != u.faction && unit_visible(g, i, who) { blocked[o.pos.y][o.pos.x] = true }
 	}
 	heap: Cost_Heap
 	cost[u.pos.y][u.pos.x] = 0
@@ -371,18 +387,69 @@ heap_pop :: proc(h: ^Cost_Heap) -> Cost_Entry {
 can_move :: proc(g: ^Game, unit: int, dest: Hex, costs: ^[ROWS][COLS]int) -> bool {
 	u := &g.units[unit]
 	if !u.alive || u.done || !in_bounds(dest) || dest == u.pos { return false }
-	if unit_at(g, dest) >= 0 { return false }
+	if o := unit_at(g, dest); o >= 0 && unit_visible(g, o, u.faction) { return false }
 	c := costs[dest.y][dest.x]
 	return c != UNREACHABLE && c <= u.moves_left
 }
 
+MAX_PATH :: 64
+
+// The cheapest path to dest found by movement_costs, without the start hex.
+path_to :: proc(g: ^Game, start, dest: Hex, costs: ^[ROWS][COLS]int) -> (path: [MAX_PATH]Hex, n: int) {
+	back: [MAX_PATH]Hex
+	cur := dest
+	for cur != start && n < MAX_PATH {
+		back[n] = cur
+		n += 1
+		nbs, k := neighbours(cur)
+		for nb in nbs[:k] {
+			c := costs[nb.y][nb.x]
+			if c != UNREACHABLE && c + step_cost(terrain_at(g, nb), terrain_at(g, cur), is_high(g, nb), is_high(g, cur)) == costs[cur.y][cur.x] {
+				cur = nb
+				break
+			}
+		}
+	}
+	for i in 0 ..< n { path[i] = back[n - 1 - i] }
+	return
+}
+
+// Moves the unit to dest one hex at a time. Under fog the way can run into an
+// enemy the side could not see: the unit then stops short (on the last hex of
+// the way it may stand on), keeps the points it has not spent, and now sees the
+// enemy. Returns false only if the move was refused.
 move_unit :: proc(g: ^Game, unit: int, dest: Hex) -> bool {
 	if g.winner >= 0 || g.units[unit].faction != g.current || g.units[unit].done { return false }
 	costs := movement_costs(g, unit)
 	if !can_move(g, unit, dest, &costs) { return false }
 	u := &g.units[unit]
-	u.moves_left -= costs[dest.y][dest.x]
-	u.pos = dest
+	start := u.pos
+	path, n := path_to(g, start, dest, &costs)
+	reached := -1 // index into path of the furthest hex walked; -1 is the start
+	bumped := false
+	for i in 0 ..< n {
+		h := path[i]
+		if o := unit_at(g, h); o >= 0 && g.units[o].faction != u.faction {
+			bumped = true
+			break
+		}
+		reached = i
+		if g.fog {
+			// what the unit sees on the way, and who sees it pass
+			look_from(g, u.faction, u.kind, h)
+			record_sightings(g, u.faction)
+			for f in 0 ..< g.faction_count {
+				if f != u.faction && mask_has(&g.watched[f], h) { g.last_seen[f][unit] = {h, true} }
+			}
+		}
+	}
+	// cannot stop on a friend: fall back along the way to a free hex
+	for reached >= 0 && unit_at(g, path[reached]) >= 0 { reached -= 1 }
+	stop := start if reached < 0 else path[reached]
+	u.moves_left -= costs[stop.y][stop.x]
+	u.pos = stop
+	if bumped { add_log(g, "%s %s stops: an enemy blocks the way", g.factions[u.faction].name, unit_type(u).short) }
+	update_vision(g, u.faction)
 	return true
 }
 
@@ -469,6 +536,7 @@ attack_weapon :: proc(g: ^Game, attacker, target: int) -> (w: Weapon_Kind, ok: b
 	a := &g.units[attacker]
 	t := &g.units[target]
 	if !a.alive || !t.alive || a.attacked || a.faction == t.faction { return }
+	if !unit_visible(g, target, a.faction) { return } // fog: only what the side can see
 	return weapon_for(g, unit_type(a), a.faction, a.pos, t.pos)
 }
 
@@ -537,6 +605,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 		t.alive = false
 		res.killed = true
 		g.kills[a.faction][weapon] += 1
+		update_vision(g, a.faction)
 	}
 	aname := g.factions[a.faction].name
 	tname := g.factions[t.faction].name
@@ -658,6 +727,7 @@ end_turn :: proc(g: ^Game) -> bool {
 		if living_units(g, g.current) > 0 { break }
 	}
 	start_faction_turn(g)
+	update_vision(g, g.current) // the side to move looks round again
 	add_log(g, "Turn %d: %s to move", g.turn, g.factions[g.current].name)
 	return true
 }

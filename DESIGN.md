@@ -49,6 +49,18 @@ even.
 
 ## Fog of war
 
+**Built November 6, 2026** (all of the below). Choices made while building it:
+units never block sight (only forest and hills do), so a hidden unit cannot
+give itself away by blocking a view; you can only attack an enemy your side can
+see; a move that runs into a hidden enemy stops on the hex before it and keeps
+its unspent points; a last-seen marker is cleared when your side looks at the
+hex again (one of your units moves, or your turn starts) and the enemy is gone.
+The scout is the unit that sees furthest; it heads for the unexplored hex
+nearest by way of the map's middle, and the others follow 2 hexes behind.
+Simulator, 1000 games: 5 slingers vs 6 kobolds 45.7% with fog (47.9% without);
+2k2s vs 4k 55.0% (52.5% without, 200 games). `-nofog` reproduces the earlier
+results exactly.
+
 - **Vision per unit type**, using line of sight: kobold 5 hexes, slinger 7.
 - A unit **in forest is only seen by enemies within 2 hexes** (still needing
   line of sight).
@@ -89,7 +101,7 @@ even.
 1. README and release-standard files. **Done November 5, 2026.**
 2. Enemies block line of sight; 15k5s battle; points cost (simulator). **Done November 5, 2026.**
 3. Elevation. **Done November 6, 2026.**
-4. Fog of war.
+4. Fog of war. **Done November 6, 2026.**
 5. Computer player improvements.
 6. Move animation; Anvil art and sound.
 7. Tap to inspect (check on a touch-size screen).

@@ -886,3 +886,122 @@ test_hilly_games_finish :: proc(t: ^testing.T) {
 		testing.expectf(t, g.winner >= 0, "seed %d: no winner", seed)
 	}
 }
+
+// ---------------------------------------------------------------- fog of war
+
+fog_game :: proc(g: ^Game) {
+	blank_game(g)
+	g.fog = true
+}
+
+@(test)
+test_vision_range_by_unit_type :: proc(t: ^testing.T) {
+	g: Game
+	fog_game(&g)
+	add_unit(&g, .Kobold, 0, {2, 10})
+	add_unit(&g, .Kobold_Slinger, 1, {9, 2}) // far away, out of everyone's sight
+	near := add_unit(&g, .Kobold, 1, {7, 10}) // 5 hexes from the kobold
+	far := add_unit(&g, .Kobold, 1, {8, 10}) // 6 hexes
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, unit_visible(&g, near, 0))
+	testing.expect(t, !unit_visible(&g, far, 0))
+	testing.expect(t, hex_seen(&g, 0, {7, 10}) && !hex_seen(&g, 0, {8, 10}))
+	testing.expect(t, unit_visible(&g, 0, 0)) // its own side always sees it
+	testing.expect(t, unit_visible(&g, far, NO_FACTION))
+
+	// a slinger sees 7
+	g.units[0].kind = .Kobold_Slinger
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, unit_visible(&g, far, 0))
+	testing.expect(t, !hex_seen(&g, 0, {10, 10}))
+}
+
+@(test)
+test_units_in_forest_seen_only_close :: proc(t: ^testing.T) {
+	g: Game
+	fog_game(&g)
+	s := add_unit(&g, .Kobold_Slinger, 0, {2, 10})
+	e := add_unit(&g, .Kobold, 1, {5, 10})
+	g.terrain[10][5] = .Forest
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, hex_in_view(&g, 0, {5, 10})) // the forest hex is in sight...
+	testing.expect(t, !unit_visible(&g, e, 0)) // ...but not the unit in it
+	testing.expect(t, !can_attack(&g, s, e)) // in sling range, but unseen
+	testing.expect(t, unit_visible(&g, s, 1)) // the slinger on grass is seen
+
+	g.units[s].pos = {3, 10} // 2 hexes away: now it is seen
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, unit_visible(&g, e, 0))
+	testing.expect(t, can_attack(&g, s, e))
+}
+
+@(test)
+test_move_stops_at_hidden_enemy :: proc(t: ^testing.T) {
+	g: Game
+	fog_game(&g)
+	k := add_unit(&g, .Kobold, 0, {2, 0})
+	// a corridor along row 0, with an enemy hidden in forest 3 hexes along
+	for row in 1 ..< ROWS { for col in 0 ..< COLS { g.terrain[row][col] = .Forest } }
+	g.terrain[0][5] = .Forest
+	e := add_unit(&g, .Kobold, 1, {5, 0})
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, !unit_visible(&g, e, 0))
+	costs := movement_costs(&g, k)
+	testing.expect(t, can_move(&g, k, {5, 0}, &costs)) // planning does not know of it
+
+	testing.expect(t, move_unit(&g, k, {5, 0}))
+	testing.expect_value(t, g.units[k].pos, Hex{4, 0}) // stopped short
+	testing.expect_value(t, g.units[k].moves_left, 2 * HALVES_PER_POINT) // 2 of 4 points spent
+	testing.expect(t, unit_visible(&g, e, 0)) // and now sees it
+	testing.expect(t, can_attack(&g, k, e))
+	testing.expect(t, strings.contains(log_line(&g, 0), "blocks the way"))
+}
+
+@(test)
+test_last_seen_marker :: proc(t: ^testing.T) {
+	g: Game
+	fog_game(&g)
+	add_unit(&g, .Kobold, 0, {2, 10})
+	e := add_unit(&g, .Kobold, 1, {6, 10})
+	update_vision(&g, NO_FACTION)
+	g.current = 1
+	start_faction_turn(&g)
+	// Blue walks out of Red's sight: Red remembers where it last saw it
+	testing.expect(t, move_unit(&g, e, {10, 10}))
+	pos, ok := sighting(&g, 0, e)
+	testing.expect(t, ok)
+	testing.expect_value(t, pos, Hex{7, 10}) // the last hex Red could see it on
+
+	// Red's turn: it looks again, finds the hex empty, and forgets
+	g.units[e].done = true
+	testing.expect(t, end_turn(&g))
+	_, ok = sighting(&g, 0, e)
+	testing.expect(t, !ok)
+}
+
+@(test)
+test_ai_scouts_and_finds_the_enemy :: proc(t: ^testing.T) {
+	g: Game
+	fog_game(&g)
+	g.factions[0].controller = .Computer
+	add_unit(&g, .Kobold, 0, {1, 9})
+	add_unit(&g, .Kobold_Slinger, 0, {1, 10})
+	add_unit(&g, .Kobold, 1, {18, 10})
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, !unit_visible(&g, 2, 0))
+	for _ in 0 ..< 200 {
+		if g.winner >= 0 { break }
+		ai_step(&g)
+	}
+	testing.expect(t, g.winner >= 0) // somebody found somebody
+}
+
+@(test)
+test_fog_off_sees_everything :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	add_unit(&g, .Kobold, 0, {0, 0})
+	e := add_unit(&g, .Kobold, 1, {19, 19})
+	testing.expect(t, unit_visible(&g, e, 0))
+	testing.expect(t, hex_seen(&g, 0, {19, 19}))
+}
