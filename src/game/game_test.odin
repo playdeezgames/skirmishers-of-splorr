@@ -1168,7 +1168,39 @@ test_mixed_band_games_finish :: proc(t: ^testing.T) {
 test_warband_scenario :: proc(t: ^testing.T) {
 	g: Game
 	new_game(&g, len(SCENARIOS) - 1, 3)
-	testing.expect_value(t, army_points(&g, 0), 160)
-	testing.expect_value(t, army_points(&g, 1), 160)
+	testing.expect_value(t, army_points(&g, 0), 168)
+	testing.expect_value(t, army_points(&g, 1), 168)
 	testing.expect_value(t, living_units(&g, 0), 8)
+}
+
+// ---------------------------------------------------------------- bow and crossbow
+
+@(test)
+test_pierce_takes_the_best_die :: proc(t: ^testing.T) {
+	testing.expect_value(t, defence_against(&UNIT_TYPES[.Champion], .Crossbow), Dice{.White = 1, .Red = 0, .Black = 0})
+	testing.expect_value(t, defence_against(&UNIT_TYPES[.Heavy], .Crossbow), Dice{.White = 1, .Red = 0, .Black = 0})
+	testing.expect_value(t, defence_against(&UNIT_TYPES[.Crossbow], .Crossbow), Dice{.White = 1, .Red = 0, .Black = 0})
+	// one die is always kept
+	testing.expect_value(t, defence_against(&UNIT_TYPES[.Kobold], .Crossbow), Dice{.White = 1, .Red = 0, .Black = 0})
+	// other weapons do not pierce
+	testing.expect_value(t, defence_against(&UNIT_TYPES[.Champion], .Bow), unit_defence(&UNIT_TYPES[.Champion]))
+}
+
+@(test)
+test_bow_and_crossbow_ranges :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	a := add_unit(&g, .Archer, 0, {2, 10})
+	x := add_unit(&g, .Crossbow, 0, {2, 12})
+	e := add_unit(&g, .Kobold, 1, {7, 10}) // 5 from the archer
+	f := add_unit(&g, .Kobold, 1, {7, 12}) // 5 from the crossbow
+	w, ok := attack_weapon(&g, a, e)
+	testing.expect(t, ok && w == .Bow)
+	testing.expect(t, !can_attack(&g, x, f), "a crossbow reaches 4")
+	g.units[f].pos = {6, 12}
+	w, ok = attack_weapon(&g, x, f)
+	testing.expect(t, ok && w == .Crossbow)
+	g.units[e].pos = {3, 10}
+	w, ok = attack_weapon(&g, a, e)
+	testing.expect(t, ok && w == .Dagger, "an archer falls back on its dagger")
 }

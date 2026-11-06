@@ -80,7 +80,7 @@ anim_update :: proc(dt: f64) {
 		anim = {active = true, ev = ev, dur = dur}
 		switch ev.kind {
 		case .Move:    play(.Step)
-		case .Attack:  play(.Sling if ev.result.weapon == .Sling else .Stab)
+		case .Attack:  play(WEAPON_SOUNDS[ev.result.weapon])
 		case .Fortify: play(.Fortify)
 		}
 	}
@@ -120,7 +120,7 @@ anim_unit :: proc(i: int, view: int) -> (pos: [2]f32, alpha: f32, show, moved: b
 		own := view == game.NO_FACTION || g.units[i].faction == view
 		show = own || anim_sees(view, near)
 	case .Attack:
-		if ev.unit == i && ev.result.weapon != .Sling && t < STRIKE_TIME {
+		if ev.unit == i && game.WEAPONS[ev.result.weapon].max_range == 1 && t < STRIKE_TIME {
 			// lunge a third of the way and back
 			lunge := math.sin(t / STRIKE_TIME * math.PI) * 0.35
 			return lerp2(hex_centre(ev.from), hex_centre(ev.target_pos), lunge), 1, true, true
@@ -143,9 +143,18 @@ draw_anim_effects :: proc() {
 	a := hex_centre(ev.from)
 	b := hex_centre(ev.target_pos)
 	if t < STRIKE_TIME {
-		if ev.result.weapon == .Sling {
-			p := lerp2(a, b, t / STRIKE_TIME)
-			draw_circle(p.x, p.y - math.sin(t / STRIKE_TIME * math.PI) * 10, 3, 0.85, 0.8, 0.7, 0.2, 0.2, 0.2, 1)
+		f := t / STRIKE_TIME
+		#partial switch ev.result.weapon {
+		case .Sling:
+			// a stone lobbed in an arc
+			p := lerp2(a, b, f)
+			draw_circle(p.x, p.y - math.sin(f * math.PI) * 10, 3, 0.85, 0.8, 0.7, 0.2, 0.2, 0.2, 1)
+		case .Bow, .Crossbow:
+			// an arrow or bolt in a straight line (the bow's a little higher)
+			lift := math.sin(f * math.PI) * (6 if ev.result.weapon == .Bow else 2)
+			tail := lerp2(a, b, max(0, f - 0.12))
+			head := lerp2(a, b, f)
+			draw_line(tail.x, tail.y - lift, head.x, head.y - lift, 0.95, 0.92, 0.85, 2)
 		}
 		return
 	}

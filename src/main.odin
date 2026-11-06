@@ -21,6 +21,7 @@ foreign canvas {
 	draw_circle :: proc(cx, cy, radius: f32, fr, fg, fb: f32, sr, sg, sb: f32, line: f32) ---
 	// align: 0 left, 1 centre, 2 right; y is the text's middle
 	draw_text :: proc(s: [^]u8, n: i32, x, y, size: f32, r, g, b: f32, align: i32) ---
+	draw_line :: proc(x0, y0, x1, y1: f32, r, g, b: f32, width: f32) ---
 	// opacity of everything drawn after it (1 = opaque)
 	set_alpha :: proc(a: f32) ---
 	// one of the WAVs in SOUND_FILES (web/index.html), by Sound index
@@ -40,6 +41,8 @@ Sprite :: enum i32 {
 	Heavy,
 	Champion,
 	Scout,
+	Archer,
+	Crossbow,
 }
 
 UNIT_SPRITES := [game.Unit_Kind]Sprite {
@@ -48,6 +51,8 @@ UNIT_SPRITES := [game.Unit_Kind]Sprite {
 	.Heavy          = .Heavy,
 	.Champion       = .Champion,
 	.Scout          = .Scout,
+	.Archer         = .Archer,
+	.Crossbow       = .Crossbow,
 }
 
 // Order must match SOUND_FILES in web/index.html.
@@ -62,6 +67,18 @@ Sound :: enum i32 {
 	Your_Turn,
 	Win,
 	Lose,
+	Bow,
+	Crossbow,
+}
+
+// The sound each weapon makes when it is used.
+WEAPON_SOUNDS := [game.Weapon_Kind]Sound {
+	.Dagger   = .Stab,
+	.Sling    = .Sling,
+	.Axe      = .Stab,
+	.Sword    = .Stab,
+	.Bow      = .Bow,
+	.Crossbow = .Crossbow,
 }
 
 play :: proc(s: Sound) {
@@ -558,7 +575,7 @@ draw_panel :: proc() {
 		for w in ut.weapons {
 			wp := &game.WEAPONS[w]
 			reach := fmt.tprintf("range %d", wp.max_range) if wp.min_range == wp.max_range else fmt.tprintf("range %d-%d", wp.min_range, wp.max_range)
-			text(fmt.tprintf("%s: %s, %s", wp.name, dice_text(wp.attack), reach), x, wy, 13, GREY)
+			text(fmt.tprintf("%s: %s, %s%s", wp.name, dice_text(wp.attack), reach, ", pierces armour" if wp.pierce else ""), x, wy, 13, GREY)
 			wy += 18
 		}
 		state := "may attack"

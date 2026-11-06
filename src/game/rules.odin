@@ -94,6 +94,8 @@ Weapon_Kind :: enum u8 {
 	Sling,
 	Axe,
 	Sword,
+	Bow,
+	Crossbow,
 }
 
 Weapon :: struct {
@@ -102,6 +104,7 @@ Weapon :: struct {
 	attack:    Dice,
 	min_range: int,
 	max_range: int,
+	pierce:    bool, // the target rolls without its best defence die (see defence_against)
 }
 
 WEAPONS := [Weapon_Kind]Weapon {
@@ -109,6 +112,8 @@ WEAPONS := [Weapon_Kind]Weapon {
 	.Sling  = {name = "sling", verb = "slings", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 3},
 	.Axe    = {name = "axe", verb = "chops", attack = {.White = 0, .Red = 1, .Black = 0}, min_range = 1, max_range = 1},
 	.Sword  = {name = "sword", verb = "cuts", attack = {.White = 1, .Red = 1, .Black = 0}, min_range = 1, max_range = 1},
+	.Bow    = {name = "bow", verb = "shoots", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 5},
+	.Crossbow = {name = "crossbow", verb = "bolts", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 4, pierce = true},
 }
 
 // ---------------------------------------------------------------- armour
@@ -138,6 +143,23 @@ unit_defence :: proc(ut: ^Unit_Type) -> Dice {
 	return ut.defense + ARMOURS[ut.armour].dice
 }
 
+// The defence dice a unit of this type rolls against weapon w. A piercing
+// weapon (the crossbow) takes away the best die (black, then red, then white),
+// but a unit with only one die still rolls it.
+defence_against :: proc(ut: ^Unit_Type, w: Weapon_Kind) -> Dice {
+	d := unit_defence(ut)
+	if !WEAPONS[w].pierce { return d }
+	total := d[.White] + d[.Red] + d[.Black]
+	if total <= 1 { return d }
+	for die in ([]Die{.Black, .Red, .White}) {
+		if d[die] > 0 {
+			d[die] -= 1
+			break
+		}
+	}
+	return d
+}
+
 Weapons :: bit_set[Weapon_Kind]
 
 // Expected scores of a handful of dice, in sixths, for choosing between weapons.
@@ -155,6 +177,8 @@ Unit_Kind :: enum u8 {
 	Heavy,
 	Champion,
 	Scout,
+	Archer,
+	Crossbow,
 }
 
 Unit_Type :: struct {
@@ -221,6 +245,27 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		move = 6,
 		points = 11, // fights as a kobold; speed and sight are worth a little (simulator: about even)
 		vision = 8,
+	},
+	.Archer = {
+		name = "Kobold Archer",
+		short = "Archer",
+		weapons = {.Bow, .Dagger},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		body = 1,
+		move = 4,
+		points = 14, // 4 beat 4 slingers 60%, lose to 5 42% (simulator, November 6, 2026)
+		vision = 7,
+	},
+	.Crossbow = {
+		name = "Kobold Crossbow",
+		short = "Crossbow",
+		weapons = {.Crossbow, .Dagger},
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		armour = .Leather,
+		body = 1,
+		move = 3,
+		points = 16, // an archer's worth against bare hide, much more against armour (simulator, November 6, 2026)
+		vision = 6,
 	},
 }
 
@@ -716,7 +761,7 @@ attack :: proc(g: ^Game, attacker, target: int) -> (res: Attack_Result, ok: bool
 	res.fortified = t.fortified
 	res.attack_advantage, res.defence_advantage = combat_advantage(g, a.pos, t.pos, t.fortified)
 	res.hits = roll_dice(&g.rng, WEAPONS[weapon].attack, advantage = res.attack_advantage)
-	res.blocks = roll_dice(&g.rng, unit_defence(unit_type(t)), advantage = res.defence_advantage)
+	res.blocks = roll_dice(&g.rng, defence_against(unit_type(t), weapon), advantage = res.defence_advantage)
 	res.damage = max(0, res.hits - res.blocks)
 	a.attacked = true
 	a.moves_left = 0 // attacking ends the unit's movement

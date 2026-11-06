@@ -58,7 +58,7 @@ Ai_View :: struct {
 	// scouting, when there are no spots: the scout heads for `goal`, the others
 	// follow it at SCOUT_LEAD hexes
 	is_scout:    bool,
-	scout_pos:   Hex,
+	scout_pos:   Hex, // also where the unit itself stands, when it is the scout
 	goal:        Hex,
 	friends:     [MAX_UNITS]Hex, // where the rest of the side stands (for the scout's leash)
 	friend_count: int,
@@ -378,8 +378,10 @@ ai_tactical_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: 
 	unsafe := mask_has(threat, h)
 	if what >= 2 && unsafe && hold { what += HOLD_PENALTY }
 	// a scout in forest sees out but is hidden beyond FOREST_SIGHT: worth a
-	// little ground
-	if what >= 2 && view.spot_count == 0 && view.is_scout && terrain_at(g, h) == .Forest { what -= SCOUT_COVER }
+	// little ground. Not for the hex it already stands on, or a scout held back
+	// by its leash could stay in a wood for ever (seen in tools/sim.sh 2h2x
+	// 2h2a, seed 1034: both sides stood still from turn 20 on)
+	if what >= 2 && view.spot_count == 0 && view.is_scout && h != view.scout_pos && terrain_at(g, h) == .Forest { what -= SCOUT_COVER }
 	bonus := 0
 	if !unsafe { bonus += 4 }
 	if is_high(g, h) { bonus += 2 }
@@ -439,7 +441,7 @@ ai_tactical_target :: proc(g: ^Game, unit: int) -> int {
 		if !ok { continue }
 		t := &g.units[i]
 		atk_adv, def_adv := combat_advantage(g, a.pos, t.pos, t.fortified)
-		score := dice_strength(WEAPONS[w].attack) * 4 - dice_strength(unit_defence(unit_type(t))) * 4 - t.body * 8
+		score := dice_strength(WEAPONS[w].attack) * 4 - dice_strength(defence_against(unit_type(t), w)) * 4 - t.body * 8
 		if def_adv { score -= 3 }
 		if atk_adv { score += 2 }
 		_, reach := unit_reach(unit_type(t))

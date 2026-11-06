@@ -195,7 +195,14 @@ next:
    swapping one for a kobold comes out even once the computer keeps its scout
    within 4 hexes of a friend; before that leash it ran ahead alone and lost
    44%). Worth depends on the mix: many cheap units get more attacks a turn.
-2. Bow and crossbow (the pierce rule).
+2. Bow and crossbow (the pierce rule). **Built November 6, 2026** with the
+   draft stats; the warband now has an archer and a crossbow (168 points a
+   side). Prices: **archer 14** (4a vs 4s 60%, vs 5s 42%; 2a2k vs 2s3k 41%),
+   **crossbow 16** (as good as an archer against bare hide, 4x vs 6k 50%, but
+   much better against armour: 4x vs 2h 75%, 2h2x vs 2h3k 76%, 1c4x vs 1c4a
+   71%). Found on the way: a scout in forest could stand still for ever (its
+   forest bonus matched the ground its leash let it gain); it now gets the
+   bonus only for a hex it moves to.
 3. Pike (the strikes-first reaction, the first rule that acts on the other
    side's turn; the computer must plan around it).
 4. Wololo: disadvantage, blessing and cursing, and when the computer casts.

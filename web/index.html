@@ -36,7 +36,7 @@
 		// Sounds: WAVs made in the Anvil (sound_export). The order must match
 		// `Sound` in src/main.odin. Browsers only allow audio after the player
 		// presses something, so they are fetched and decoded on the first press.
-		const SOUND_FILES = ["step", "stab", "sling", "hit", "block", "slain", "fortify", "your_turn", "win", "lose"];
+		const SOUND_FILES = ["step", "stab", "sling", "hit", "block", "slain", "fortify", "your_turn", "win", "lose", "bow", "crossbow"];
 		let audio = null, gain = null;
 		// mute (M or the Sound button) is remembered in this browser
 		let muted = false;
@@ -93,6 +93,14 @@
 					if (line > 0) { g.strokeStyle = rgb(sr, sg, sb); g.lineWidth = line; g.stroke(); }
 				},
 				set_alpha: (a) => { g.globalAlpha = a; },
+				draw_line: (x0, y0, x1, y1, r, gr, b, width) => {
+					g.beginPath();
+					g.moveTo(x0, y0);
+					g.lineTo(x1, y1);
+					g.strokeStyle = rgb(r, gr, b);
+					g.lineWidth = width;
+					g.stroke();
+				},
 				blit: (sprite, cx, cy, scale) => {
 					if (!atlas.complete || !atlas.naturalWidth) return;
 					const s = SPRITE * scale;
