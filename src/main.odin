@@ -187,11 +187,39 @@ mouse_move :: proc "c" (x, y: f32) {
 	hover = h if game.in_bounds(h) && x < PANEL_X - 4 else {-1, -1}
 }
 
+// Starting a new game (New game, N, or another scenario) throws the current
+// one away, so it asks first unless the game is already won.
+CONFIRM_BOX :: Button{170, 215, 320, 130}
+CONFIRM_YES :: Button{CONFIRM_BOX.x + 20, CONFIRM_BOX.y + 82, 130, 32}
+CONFIRM_NO :: Button{CONFIRM_BOX.x + 170, CONFIRM_BOX.y + 82, 130, 32}
+
+confirming := false
+confirm_scenario: int // the scenario to start on yes
+
+ask_new_game :: proc(n: int) {
+	if g.winner >= 0 {
+		start_game(n)
+		return
+	}
+	confirming = true
+	confirm_scenario = n
+}
+
+answer_new_game :: proc(yes: bool) {
+	confirming = false
+	if yes { start_game(confirm_scenario) }
+}
+
 @(export)
 mouse_click :: proc "c" (x, y: f32) {
 	context = ctx
+	if confirming {
+		if in_button(CONFIRM_YES, x, y) { answer_new_game(true) }
+		if in_button(CONFIRM_NO, x, y) { answer_new_game(false) }
+		return
+	}
 	if in_button(NEW_GAME_BUTTON, x, y) {
-		start_game(scenario)
+		ask_new_game(scenario)
 		return
 	}
 	if in_button(MUTE_BUTTON, x, y) {
@@ -267,7 +295,7 @@ finish_selected_move :: proc() {
 
 cycle_scenario :: proc(step: int) {
 	n := len(game.SCENARIOS)
-	start_game((scenario + step + n) % n)
+	ask_new_game((scenario + step + n) % n)
 }
 
 // Refused by the rules while any of the player's units has not ended its move.
@@ -280,6 +308,16 @@ end_human_turn :: proc() {
 
 on_key :: proc(e: js.Event) {
 	if e.kind != .Key_Down || e.key.repeat { return }
+	if confirming {
+		switch e.key.key {
+		case "y", "Y", "Enter":       answer_new_game(true)
+		case "n", "N", "Escape", " ": answer_new_game(false)
+		case "m", "M":                toggle_mute()
+		case:                         return
+		}
+		js.event_prevent_default()
+		return
+	}
 	if anim_busy() {
 		switch e.key.key {
 		case " ", "Enter", "d", "D", "f", "F": return // wait for the animation
@@ -295,7 +333,7 @@ on_key :: proc(e: js.Event) {
 	case "Escape":
 		selected = -1
 	case "n", "N":
-		start_game(scenario)
+		ask_new_game(scenario)
 	case "v", "V":
 		if has_human() { return }
 		view_mode = View_Mode((int(view_mode) + 1) % len(View_Mode))
@@ -345,7 +383,7 @@ step :: proc(dt: f64, c: runtime.Context) -> bool {
 	free_all(context.temp_allocator)
 
 	anim_update(dt)
-	if game.is_computer_turn(&g) && !anim_busy() {
+	if game.is_computer_turn(&g) && !anim_busy() && !confirming {
 		ai_timer += dt
 		if ai_timer >= AI_DELAY {
 			ai_timer = 0
@@ -359,6 +397,7 @@ step :: proc(dt: f64, c: runtime.Context) -> bool {
 	clear_canvas(0.1, 0.1, 0.13)
 	draw_map()
 	draw_panel()
+	if confirming { draw_confirm() }
 	return true
 }
 
@@ -577,4 +616,17 @@ draw_panel :: proc() {
 		shade := 1 - f32(i) * 0.06
 		text(game.log_line(&g, i), x, 376 + f32(i) * 15, 11, WHITE * shade)
 	}
+}
+
+draw_confirm :: proc() {
+	fill_rect(0, 0, CANVAS_W, CANVAS_H, 0, 0, 0, 0.55)
+	b := CONFIRM_BOX
+	fill_rect(b.x, b.y, b.w, b.h, 0.14, 0.15, 0.2, 1)
+	fill_rect(b.x, b.y, b.w, 3, GOLD.r, GOLD.g, GOLD.b, 1)
+	what := "Start a new game?" if confirm_scenario == scenario else "Switch scenario?"
+	text(what, b.x + b.w / 2, b.y + 28, 17, GOLD, 1)
+	if confirm_scenario != scenario { text(game.SCENARIOS[confirm_scenario].name, b.x + b.w / 2, b.y + 48, 12, WHITE, 1) }
+	text("The game in progress will be lost.", b.x + b.w / 2, b.y + 64, 13, GREY, 1)
+	button(CONFIRM_YES, "New game (Y)", true)
+	button(CONFIRM_NO, "Keep playing (N)", true)
 }

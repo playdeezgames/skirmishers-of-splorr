@@ -19,7 +19,7 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 ## Controls
 
 - **Click** one of your units to select it. Yellow hexes show where it can move and a red outline marks an enemy it can attack. Click a yellow hex to move there, or a red-outlined enemy to attack it.
-- **D** fortify, **F** finish move, **Space** end turn, **Esc** deselect, **N** new game, **[ ]** change scenario, **M** sound on or off (also the Sound button; remembered in your browser). There are buttons for all of these too.
+- **D** fortify, **F** finish move, **Space** end turn, **Esc** deselect, **N** new game, **[ ]** change scenario (both ask first while a game is in progress), **M** sound on or off (also the Sound button; remembered in your browser). There are buttons for all of these too.
 - Hover over a hex to see its terrain, movement cost and any unit on it.
 - In the computer-against-computer battles, **V** switches the map between everything, Red's view and Blue's view.
 
