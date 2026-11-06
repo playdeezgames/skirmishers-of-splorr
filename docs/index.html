@@ -87,12 +87,16 @@
 		});
 
 		// ?scenario=2 watches the computer play both sides.
-		const wanted = parseInt(new URLSearchParams(location.search).get("scenario"), 10);
-		if (wanted > 0) {
+		// QA: ?steps=N then plays N computer actions at once (for screenshots).
+		const params = new URLSearchParams(location.search);
+		const wanted = parseInt(params.get("scenario"), 10);
+		const steps = parseInt(params.get("steps"), 10);
+		if (wanted > 0 || steps > 0) {
 			const timer = setInterval(() => {
 				if (memory.exports && memory.exports.load_scenario) {
 					clearInterval(timer);
-					memory.exports.load_scenario(wanted);
+					if (wanted > 0) memory.exports.load_scenario(wanted);
+					if (steps > 0) memory.exports.debug_ai_steps(steps);
 				}
 			}, 50);
 		}
