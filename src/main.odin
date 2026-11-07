@@ -124,9 +124,15 @@ AUTO_END_DELAY :: 0.5 // seconds to see your last action before the turn ends by
 BACKDROP_SCENARIO :: 1 // the computer battle behind the title screen
 CUSTOM_SCENARIO :: -1 // `scenario` for a custom battle (set up from `custom`)
 
-// With a Wololo selected, chant mode makes OK on a friend bless it instead of
-// selecting it (OK on an enemy in range always curses).
-chanting := false
+// With a Wololo selected, chant mode aims a blessing or a curse at the hex
+// under the cursor and the six round it (C, or the unit menu). Outside it, OK
+// on an enemy in range curses round that enemy.
+Chant_Mode :: enum {
+	Off,
+	Bless,
+	Curse,
+}
+chant_mode := Chant_Mode.Off
 
 ctx: runtime.Context
 g: game.Game
@@ -160,7 +166,7 @@ start_game :: proc(n: int) {
 	seed := u64(time.now()._nsec)
 	if n == CUSTOM_SCENARIO { game.new_custom_game(&g, &custom, seed) } else { game.new_game(&g, n, seed) }
 	selected = -1
-	chanting = false
+	chant_mode = .Off
 	cursor_on = false
 	put_cursor({game.COLS / 2, game.ROWS / 2})
 	ai_timer = 0
@@ -278,7 +284,7 @@ finish_selected_move :: proc() {
 end_human_turn :: proc() {
 	if game.end_turn(&g) {
 		selected = -1
-		chanting = false
+		chant_mode = .Off
 		ai_timer = 0
 	}
 }
@@ -475,12 +481,12 @@ draw_map :: proc() {
 		if selected >= 0 && !anim_busy() && game.can_attack(&g, selected, i) {
 			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, 1, 0.15, 0.1, 1, 3)
 		}
-		if selected_chants() && !anim_busy() && game.can_chant(&g, selected, i) && (chanting || u.faction != g.current) {
-			// who the Wololo can bless (gold, in chant mode) or curse (purple)
-			cc := BLESS_COLOR if u.faction == g.current else CURSE_COLOR
-			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, cc.r, cc.g, cc.b, 1, 3)
+		if selected_chants() && chant_mode == .Off && !anim_busy() && u.faction != g.current && game.can_chant(&g, selected, i) {
+			// enemies the Wololo can curse round (purple)
+			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, CURSE_COLOR.r, CURSE_COLOR.g, CURSE_COLOR.b, 1, 3)
 		}
 	}
+	draw_chant_area()
 	draw_anim_effects()
 	if selected >= 0 && !anim_busy() {
 		p := hex_centre(g.units[selected].pos)
@@ -489,6 +495,33 @@ draw_map :: proc() {
 	if cursor_on && !menu_open() {
 		p := hex_centre(cursor)
 		draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, GOLD.r, GOLD.g, GOLD.b, 0.95, 2.5)
+	}
+}
+
+// In chant mode, the hexes a chant on the cursor would cover: tinted when it
+// can go there, a faint outline when it cannot.
+draw_chant_area :: proc() {
+	if chant_mode == .Off || !selected_chants() || anim_busy() || menu_open() { return }
+	bless := chant_mode == .Bless
+	ok := game.can_chant_at(&g, selected, cursor, bless)
+	col := BLESS_COLOR if bless else CURSE_COLOR
+	nbs, n := game.neighbours(cursor)
+	area: [7]game.Hex
+	area[0] = cursor
+	copy(area[1:], nbs[:n])
+	for h in area[:n + 1] {
+		p := hex_centre(h)
+		if ok {
+			draw_hex(p.x, p.y, HEX_R - 1, col.r, col.g, col.b, 0.28, col.r, col.g, col.b, 0.9, 2)
+		} else {
+			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, col.r, col.g, col.b, 0.35, 1.5)
+		}
+	}
+	for i in 0 ..< g.unit_count {
+		if ok && game.chant_hits(&g, selected, cursor, bless, i) {
+			p := hex_centre(g.units[i].pos)
+			draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, col.r, col.g, col.b, 1, 3)
+		}
 	}
 }
 
@@ -559,8 +592,10 @@ control_hint :: proc() -> string {
 		return "Up/Down choose   OK pick   Cancel back"
 	case !human_turn():
 		return "Cancel: menu"
-	case chanting:
-		return "OK on a gold-ringed friend: bless   Cancel: stop"
+	case chant_mode == .Bless:
+		return "OK: bless friends on and round the cursor   Cancel: stop"
+	case chant_mode == .Curse:
+		return "OK: curse foes on and round the cursor   Cancel: stop"
 	case selected >= 0:
 		return "OK: move/attack   OK on it: more   Cancel: drop"
 	}
@@ -583,12 +618,13 @@ draw_unit_card :: proc(i: int, x, y: f32) {
 		wy += 16
 	}
 	if ut.chants {
-		text(fmt.tprintf("chant: bless a friend or curse a foe, range %d", game.CHANT_RANGE), x, wy, 13, GREY)
+		text(fmt.tprintf("chant: bless or curse a hex and round it, range %d", game.CHANT_RANGE), x, wy, 13, GREY)
 		wy += 16
 	}
 	if i != selected || u.faction != g.current { return }
 	state := "may chant" if ut.chants else "may attack"
-	if ut.chants && chanting { state = "chant mode: OK on a friend to bless it" }
+	if ut.chants && chant_mode == .Bless { state = "chant mode: bless (C switches to curse)" }
+	if ut.chants && chant_mode == .Curse { state = "chant mode: curse (C stops)" }
 	if u.boon != .None { state = fmt.tprintf("%s; %s", state, "blessed" if u.boon == .Blessed else "cursed") }
 	if u.fortified {
 		state = "fortified: defends with advantage"

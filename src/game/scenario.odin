@@ -270,7 +270,7 @@ setup_kobold_hills :: proc(g: ^Game, percent: int) {
 setup_kobold_hills_15 :: proc(g: ^Game) { setup_kobold_hills(g, 15) }
 setup_kobold_hills_35 :: proc(g: ^Game) { setup_kobold_hills(g, 35) }
 
-// Nine a side, 190 points each: a champion, two heavies, a pike, a slinger,
+// Nine a side, 198 points each: a champion, two heavies, a pike, a slinger,
 // an archer, a crossbow, a scout and a Wololo, on the usual light woods and
 // road.
 setup_kobold_warband :: proc(g: ^Game) {
@@ -303,36 +303,36 @@ setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_
 	grow_hills_to(g, hills)
 }
 
-// Heavies, pikes, crossbows and a Wololo (134 points) against archers, a scout
-// and a crowd of kobolds (113): 48% to 51%.
+// Heavies, pikes, crossbows and a Wololo (142 points) against archers, a scout
+// and a crowd of kobolds (123): 50% to 49%.
 setup_shield_wall :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Crossbow}
-	blue := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Kobold, .Kobold}
+	blue := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Kobold, .Kobold, .Kobold}
 	setup_bands(g, -1, 0, red[:], blue[:])
 }
 
-// A champion, two heavies, a Wololo and four kobolds (157 points) against
-// twelve kobolds and three slingers (156): 55% to 45%.
+// A champion, two heavies, a Wololo and four kobolds (165 points) against
+// thirteen kobolds and three slingers (166): 53% to 47%.
 setup_champions_guard :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Kobold, .Heavy, .Kobold, .Wololo, .Champion, .Kobold, .Heavy, .Kobold}
 	blue := [?]Unit_Kind {
 		.Kobold_Slinger, .Kobold, .Kobold, .Kobold, .Kobold_Slinger, .Kobold, .Kobold, .Kobold, .Kobold_Slinger, .Kobold,
-		.Kobold, .Kobold, .Kobold, .Kobold, .Kobold,
+		.Kobold, .Kobold, .Kobold, .Kobold, .Kobold, .Kobold,
 	}
 	setup_bands(g, -1, 0, red[:], blue[:])
 }
 
 // Half the map is forest, where bows see little: archers, a scout and kobolds
-// (127 points) against heavies, a pike, crossbows and a Wololo (114): 48% to 50%.
+// (137 points) against heavies, a pike, crossbows and a Wololo (122): 51% to 48%.
 setup_woods_ambush :: proc(g: ^Game) {
-	red := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Archer, .Kobold, .Kobold}
+	red := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Archer, .Kobold, .Kobold, .Kobold}
 	blue := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Heavy, .Crossbow}
 	setup_bands(g, 50, 0, red[:], blue[:])
 }
 
 // Hilly ground, where bows shoot half as far again from high ground: four
 // archers and two heavies (106 points) against a shield wall with two kobolds
-// (154): 55% to 44%.
+// (162): 47% to 53%.
 setup_archer_heights :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Archer, .Heavy, .Archer, .Archer, .Heavy, .Archer}
 	blue := [?]Unit_Kind{.Crossbow, .Kobold, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Kobold, .Crossbow}

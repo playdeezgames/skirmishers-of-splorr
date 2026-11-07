@@ -56,7 +56,11 @@ anim_duration :: proc(ev: ^game.Event, view: int) -> f64 {
 	case .Fortify:
 		if own || anim_sees(view, ev.from) { return 0.2 }
 	case .Chant:
-		if own || g.units[ev.target].faction == view || anim_sees(view, ev.from) || anim_sees(view, ev.target_pos) { return CHANT_TIME }
+		if own || anim_sees(view, ev.from) || anim_sees(view, ev.target_pos) { return CHANT_TIME }
+		for i in 0 ..< g.unit_count {
+			// the side being chanted on sees its own units glow
+			if g.units[i].faction == view && game.hex_distance(g.units[i].pos, ev.target_pos) <= game.CHANT_RADIUS { return CHANT_TIME }
+		}
 	}
 	return 0
 }
@@ -142,15 +146,21 @@ anim_unit :: proc(i: int, view: int) -> (pos: [2]f32, alpha: f32, show, moved: b
 // saying what happened.
 draw_anim_effects :: proc() {
 	if anim.active && anim.ev.kind == .Chant {
-		// a ring widening round the target, gold for a blessing, purple for a curse
+		// the area glows and a ring widens over it, gold for a blessing,
+		// purple for a curse
 		ev := &anim.ev
 		f := f32(anim.t / CHANT_TIME)
-		bless := g.units[ev.target].faction == g.units[ev.unit].faction
-		col := BLESS_COLOR if bless else CURSE_COLOR
+		col := BLESS_COLOR if ev.bless else CURSE_COLOR
 		b := hex_centre(ev.target_pos)
 		set_alpha(1 - f)
-		draw_hex(b.x, b.y, HEX_R * (0.6 + f * 0.6), 0, 0, 0, 0, col.r, col.g, col.b, 1, 3)
-		text("blessed!" if bless else "cursed!", b.x, b.y - HEX_R - 4 - f * 8, 13, col, 1)
+		nbs, n := game.neighbours(ev.target_pos)
+		draw_hex(b.x, b.y, HEX_R - 1, col.r, col.g, col.b, 0.35, col.r, col.g, col.b, 1, 2)
+		for h in nbs[:n] {
+			p := hex_centre(h)
+			draw_hex(p.x, p.y, HEX_R - 1, col.r, col.g, col.b, 0.35, col.r, col.g, col.b, 1, 2)
+		}
+		draw_hex(b.x, b.y, HEX_R * (1.2 + f * 1.4), 0, 0, 0, 0, col.r, col.g, col.b, 1, 3)
+		text("blessed!" if ev.bless else "cursed!", b.x, b.y - HEX_R * 2 - 4 - f * 8, 13, col, 1)
 		set_alpha(1)
 		return
 	}

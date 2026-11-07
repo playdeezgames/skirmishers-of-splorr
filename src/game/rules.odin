@@ -298,7 +298,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		defense = {.White = 1, .Red = 0, .Black = 0},
 		body = 1,
 		move = 4,
-		points = 12, // a kobold's worth beside kobolds, more beside heavies (55%) and champions (61%) (simulator, November 6, 2026)
+		points = 20, // area chants (November 7, 2026): two kobolds beside kobolds (1w10k v 12k 50%), more beside heavies (1w2h2k v 2k2h2k 57%) and champions (1w1c3k v 1c5k 51%)
 		vision = 6,
 		chants = true,
 	},
@@ -386,8 +386,9 @@ Event :: struct {
 	from:       Hex, // where the unit started
 	path:       [MAX_EVENT_PATH]Hex, // moves: the hexes walked, ending where it stopped
 	steps:      int,
-	target_pos: Hex,
+	target_pos: Hex, // attacks: where the target stood; chants: the centre hex
 	result:     Attack_Result,
+	bless:      bool, // chants: a blessing (else a curse)
 }
 
 push_event :: proc(g: ^Game, e: Event) {
@@ -948,41 +949,96 @@ unit_finished :: proc(g: ^Game, unit: int) -> bool {
 	if u.done || u.attacked { return true }
 	if u.moves_left > 0 { return false }
 	for i in 0 ..< g.unit_count {
-		if can_attack(g, unit, i) || can_chant(g, unit, i) { return false }
+		if can_attack(g, unit, i) { return false }
 	}
-	return true
+	return !can_chant_anywhere(g, unit)
 }
 
 // ---------------------------------------------------------------- chanting
 
-// Can this Wololo chant at that unit now? It must not have moved its last or
-// acted; the target is another living unit its side can see, within
-// CHANT_RANGE, with line of sight beyond 1 hex.
-can_chant :: proc(g: ^Game, caster, target: int) -> bool {
+// A chant lands on a hex and the six around it (CHANT_RADIUS): a blessing on
+// every friend there, a curse on every enemy there that the caster's side can
+// see. The Wololo never blesses itself.
+CHANT_RADIUS :: 1
+
+// Would a chant centred on `center` touch this unit?
+chant_hits :: proc(g: ^Game, caster: int, center: Hex, bless: bool, unit: int) -> bool {
 	c := &g.units[caster]
-	t := &g.units[target]
-	if g.winner >= 0 || caster == target || !c.alive || !t.alive || c.done || c.attacked || !unit_type(c).chants { return false }
-	if c.faction != g.current || !unit_visible(g, target, c.faction) { return false }
-	d := hex_distance(c.pos, t.pos)
-	return d <= CHANT_RANGE && (d <= 1 || line_of_sight(g, c.pos, t.pos, c.faction))
+	u := &g.units[unit]
+	if unit == caster || !u.alive || hex_distance(center, u.pos) > CHANT_RADIUS { return false }
+	if bless { return u.faction == c.faction }
+	return u.faction != c.faction && unit_visible(g, unit, c.faction)
 }
 
-// The Wololo blesses a friend (advantage on its next roll) or curses an enemy
-// (disadvantage on its next roll). Like an attack, it ends the Wololo's move.
-// A unit holds one blessing or curse at a time; a new one replaces it.
-chant :: proc(g: ^Game, caster, target: int) -> bool {
-	if !can_chant(g, caster, target) { return false }
+// Can this Wololo chant on that hex now? It must not have acted; the hex is in
+// its side's sight, within CHANT_RANGE, with line of sight beyond 1 hex, and
+// the chant would touch somebody.
+can_chant_at :: proc(g: ^Game, caster: int, center: Hex, bless: bool) -> bool {
 	c := &g.units[caster]
+	if g.winner >= 0 || !c.alive || c.done || c.attacked || !unit_type(c).chants || c.faction != g.current { return false }
+	if !in_bounds(center) || !hex_in_view(g, c.faction, center) { return false }
+	d := hex_distance(c.pos, center)
+	if d > CHANT_RANGE || (d > 1 && !line_of_sight(g, c.pos, center, c.faction)) { return false }
+	for i in 0 ..< g.unit_count {
+		if chant_hits(g, caster, center, bless, i) { return true }
+	}
+	return false
+}
+
+// A chant centred on a unit: blesses round a friend, curses round an enemy.
+can_chant :: proc(g: ^Game, caster, target: int) -> bool {
 	t := &g.units[target]
-	t.boon = .Blessed if t.faction == c.faction else .Cursed
-	t.boon_by = c.faction
+	return t.alive && can_chant_at(g, caster, t.pos, t.faction == g.units[caster].faction)
+}
+
+// Is there any hex this Wololo could chant on now?
+can_chant_anywhere :: proc(g: ^Game, caster: int) -> bool {
+	c := &g.units[caster]
+	if c.done || c.attacked || !unit_type(c).chants { return false }
+	for row in max(0, c.pos.y - CHANT_RANGE) ..= min(ROWS - 1, c.pos.y + CHANT_RANGE) {
+		for col in max(0, c.pos.x - CHANT_RANGE - 1) ..= min(COLS - 1, c.pos.x + CHANT_RANGE + 1) {
+			h := Hex{col, row}
+			if can_chant_at(g, caster, h, true) || can_chant_at(g, caster, h, false) { return true }
+		}
+	}
+	return false
+}
+
+// The Wololo blesses (advantage on the next roll) or curses (disadvantage)
+// every unit the chant touches. Like an attack, it ends the Wololo's move. A
+// unit holds one blessing or curse at a time; a new one replaces it.
+chant_at :: proc(g: ^Game, caster: int, center: Hex, bless: bool) -> bool {
+	if !can_chant_at(g, caster, center, bless) { return false }
+	c := &g.units[caster]
+	names: [dynamic]string
+	names.allocator = context.temp_allocator
+	other := c.faction
+	for i in 0 ..< g.unit_count {
+		if !chant_hits(g, caster, center, bless, i) { continue }
+		u := &g.units[i]
+		u.boon = .Blessed if bless else .Cursed
+		u.boon_by = c.faction
+		other = u.faction
+		append(&names, unit_type(u).short)
+	}
 	c.attacked = true
 	c.moves_left = 0
 	c.done = true
-	push_event(g, {kind = .Chant, unit = caster, target = target, from = c.pos, target_pos = t.pos})
+	push_event(g, {kind = .Chant, unit = caster, target = -1, from = c.pos, target_pos = center, bless = bless})
+	list := ""
+	for n, i in names {
+		sep := "" if i == 0 else (" and " if i == len(names) - 1 else ", ")
+		list = fmt.tprintf("%s%s%s", list, sep, n)
+	}
 	add_log(g, "%s %s %s %s %s", g.factions[c.faction].name, unit_type(c).short,
-		"blesses" if t.boon == .Blessed else "curses", g.factions[t.faction].name, unit_type(t).short)
+		"blesses" if bless else "curses", g.factions[other].name, list)
 	return true
+}
+
+// A chant centred on a unit (see can_chant).
+chant :: proc(g: ^Game, caster, target: int) -> bool {
+	t := &g.units[target]
+	return t.alive && chant_at(g, caster, t.pos, t.faction == g.units[caster].faction)
 }
 
 // True when the unit has spent any movement this turn.

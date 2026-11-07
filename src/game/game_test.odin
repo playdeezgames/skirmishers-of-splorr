@@ -1169,8 +1169,8 @@ test_warband_scenario :: proc(t: ^testing.T) {
 	g: Game
 	testing.expect_value(t, SCENARIOS[8].name, "Kobold Warband")
 	new_game(&g, 8, 3)
-	testing.expect_value(t, army_points(&g, 0), 190)
-	testing.expect_value(t, army_points(&g, 1), 190)
+	testing.expect_value(t, army_points(&g, 0), 198)
+	testing.expect_value(t, army_points(&g, 1), 198)
 	testing.expect_value(t, living_units(&g, 0), 9)
 }
 
@@ -1441,10 +1441,10 @@ test_mixed_band_scenarios :: proc(t: ^testing.T) {
 		hills:     int,
 	}
 	wants := [?]Want {
-		{"Shield Wall vs Skirmishers", 134, 113, -1, 0},
-		{"Champion's Guard vs the Horde", 157, 156, -1, 0},
-		{"Ambush in the Woods", 127, 114, 50, 0},
-		{"Archers on the Heights", 106, 154, -1, 35},
+		{"Shield Wall vs Skirmishers", 142, 123, -1, 0},
+		{"Champion's Guard vs the Horde", 165, 166, -1, 0},
+		{"Ambush in the Woods", 137, 122, 50, 0},
+		{"Archers on the Heights", 106, 162, -1, 35},
 	}
 	for w in wants {
 		idx := -1
@@ -1459,4 +1459,66 @@ test_mixed_band_scenarios :: proc(t: ^testing.T) {
 		if w.forest >= 0 { testing.expect_value(t, forest_count(g), ROWS * COLS * w.forest / 100) }
 		for i in 0 ..< g.unit_count { testing.expect(t, g.terrain[g.units[i].pos.y][g.units[i].pos.x] != .Forest) }
 	}
+}
+
+@(test)
+test_chant_area :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	w := add_unit(&g, .Wololo, 0, {5, 10})
+	center := Hex{8, 10}
+	nbs, _ := neighbours(center)
+	a := add_unit(&g, .Kobold, 0, center)
+	b := add_unit(&g, .Heavy, 0, nbs[0] if nbs[0] != Hex{9, 10} else nbs[1])
+	c := add_unit(&g, .Kobold, 0, {10, 10}) // two from the centre
+	far_side := Hex{9, 10} // an enemy beside the centre, not in the line of sight
+	testing.expect_value(t, hex_distance(center, far_side), 1)
+	d := add_unit(&g, .Kobold, 1, far_side)
+	testing.expect_value(t, hex_distance(center, g.units[c].pos), 2)
+	testing.expect(t, chant_at(&g, w, center, true))
+	testing.expect_value(t, g.units[a].boon, Boon.Blessed)
+	testing.expect_value(t, g.units[b].boon, Boon.Blessed)
+	testing.expect_value(t, g.units[c].boon, Boon.None)
+	testing.expect_value(t, g.units[d].boon, Boon.None) // a blessing skips enemies
+	testing.expect(t, strings.contains(log_line(&g, 0), "blesses Red"))
+
+	// a curse on an empty hex catches every enemy round it, but never the
+	// Wololo's own side, and the Wololo never blesses itself
+	blank_game(&g)
+	w = add_unit(&g, .Wololo, 0, {5, 10})
+	e1 := add_unit(&g, .Kobold, 1, {7, 9})
+	e2 := add_unit(&g, .Kobold, 1, {7, 11})
+	f := add_unit(&g, .Kobold, 0, {6, 10})
+	empty := Hex{7, 10}
+	testing.expect(t, hex_distance(empty, g.units[e1].pos) == 1 && hex_distance(empty, g.units[e2].pos) == 1)
+	testing.expect(t, !can_chant_at(&g, w, {1, 10}, false), "nobody to curse there")
+	testing.expect(t, chant_at(&g, w, empty, false))
+	testing.expect_value(t, g.units[e1].boon, Boon.Cursed)
+	testing.expect_value(t, g.units[e2].boon, Boon.Cursed)
+	testing.expect_value(t, g.units[f].boon, Boon.None)
+	testing.expect_value(t, g.units[w].boon, Boon.None)
+
+	// alone, a Wololo has nobody to chant on: out of moves, it is finished
+	blank_game(&g)
+	w = add_unit(&g, .Wololo, 0, {5, 10})
+	add_unit(&g, .Kobold, 1, {15, 10})
+	testing.expect(t, !can_chant_at(&g, w, {5, 10}, true), "no blessing itself")
+	g.units[w].moves_left = 0
+	testing.expect(t, unit_finished(&g, w))
+}
+
+@(test)
+test_chant_curses_only_seen_enemies :: proc(t: ^testing.T) {
+	g: Game
+	blank_game(&g)
+	g.fog = true
+	w := add_unit(&g, .Wololo, 0, {5, 10})
+	seen := add_unit(&g, .Kobold, 1, {7, 10}) // 2 away on grass
+	g.terrain[10][8] = .Forest
+	hidden := add_unit(&g, .Kobold, 1, {8, 10}) // 3 away in forest: unseen
+	update_vision(&g, NO_FACTION)
+	testing.expect(t, !unit_visible(&g, hidden, 0))
+	testing.expect(t, chant_at(&g, w, {7, 10}, false))
+	testing.expect_value(t, g.units[seen].boon, Boon.Cursed)
+	testing.expect_value(t, g.units[hidden].boon, Boon.None)
 }

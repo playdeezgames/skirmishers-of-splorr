@@ -277,7 +277,10 @@ menu_items :: proc(id: Menu_Id) -> []Item {
 			u := &g.units[selected]
 			add(&n, "Fortify", .Fortify, enabled = game.can_fortify(&g, selected))
 			add(&n, "Finish move", .Finish, enabled = !game.unit_finished(&g, selected))
-			if game.unit_type(u).chants { add(&n, "Chant: bless a friend", .Chant, enabled = !u.done) }
+			if game.unit_type(u).chants {
+				add(&n, "Chant: bless an area", .Chant, enabled = !u.done && !u.attacked)
+				add(&n, "Chant: curse an area", .Chant, enabled = !u.done && !u.attacked, arg = 1)
+			}
 		}
 		add(&n, "Cancel", .Back)
 	case .Confirm:
@@ -380,7 +383,8 @@ activate :: proc(it: Item) {
 		finish_selected_move()
 	case .Chant:
 		pop_menu()
-		chanting = true
+		chant_mode = .Bless if it.arg == 0 else .Curse
+		cursor_on = true
 	}
 	#partial switch it.action {
 	case .Forest, .Road, .Hills, .Budget, .Watch, .Pick_Army, .Buy, .Clear_Army: save_custom()
@@ -483,13 +487,19 @@ play_ok :: proc() {
 	h := cursor
 	other := game.unit_at(&g, h)
 	if other >= 0 && !game.unit_visible(&g, other, g.current) { other = -1 }
-	if selected_chants() && other >= 0 && (chanting || g.units[other].faction != g.current) && game.can_chant(&g, selected, other) {
-		game.chant(&g, selected, other) // this ends the Wololo's move
-		chanting = false
+	if selected_chants() && chant_mode != .Off {
+		// aimed at the hex under the cursor; nothing happens where it cannot go
+		if game.chant_at(&g, selected, h, chant_mode == .Bless) { // this ends the Wololo's move
+			chant_mode = .Off
+			select_next_unit()
+		}
+		return
+	}
+	if selected_chants() && other >= 0 && g.units[other].faction != g.current && game.can_chant(&g, selected, other) {
+		game.chant(&g, selected, other) // curses round that enemy
 		select_next_unit()
 		return
 	}
-	chanting = false
 	if other >= 0 && other == selected {
 		push_menu(.Unit) // fortify, finish move, chant
 		return
@@ -511,7 +521,7 @@ play_ok :: proc() {
 
 play_cancel :: proc() {
 	switch {
-	case chanting:      chanting = false
+	case chant_mode != .Off: chant_mode = .Off
 	case selected >= 0: selected = -1
 	case:               push_menu(.Pause)
 	}
@@ -545,7 +555,10 @@ on_key :: proc(e: js.Event) {
 	case "f", "F":
 		if !menu_open() && !anim_busy() { finish_selected_move() }
 	case "c", "C":
-		if !menu_open() && selected_chants() { chanting = !chanting }
+		if !menu_open() && selected_chants() {
+			chant_mode = Chant_Mode((int(chant_mode) + 1) % len(Chant_Mode)) // off, bless, curse
+			cursor_on = true
+		}
 	case "e", "E":
 		if !menu_open() && !anim_busy() && human_turn() { end_human_turn() }
 	case "v", "V":
@@ -668,11 +681,13 @@ HELP := [?]string {
 	"Back / menu: Esc, B (Start opens the menu too).",
 	"OK on your unit selects it; OK on a yellow hex moves it there; OK on a",
 	"red-ringed enemy attacks. OK on the selected unit again: fortify, finish",
-	"its move, or (Wololo) bless a friend. Keyboard: F finish, C chant, M sound.",
+	"its move, or (Wololo) chant. Keyboard: F finish, C chant, M sound.",
 	"",
 	"Forest costs 2 and blocks shots; roads are quick; high ground helps in",
 	"melee and adds sling and bow range. You see only what your units see.",
 	"Armour adds defence dice; crossbows pierce it; pikes strike first.",
+	"A Wololo's chant blesses every friend, or curses every enemy, on a hex",
+	"and the six round it.",
 }
 
 draw_menus :: proc() {

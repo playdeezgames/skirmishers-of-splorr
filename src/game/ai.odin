@@ -516,19 +516,37 @@ ai_chant_value :: proc(g: ^Game, f: int, t: int, threat: ^Hex_Mask) -> int {
 	return 0
 }
 
-// The best target for the Wololo standing on `from` (ignoring that it may not
-// be there yet), and what it is worth.
-ai_best_chant :: proc(g: ^Game, caster: int, from: Hex, threat: ^Hex_Mask) -> (best, value: int) {
-	c := &g.units[caster]
-	best = -1
+// What a chant is worth on each unit, worked out once per Wololo move.
+Chant_Values :: [MAX_UNITS]int
+
+ai_chant_values :: proc(g: ^Game, caster: int, threat: ^Hex_Mask) -> (v: Chant_Values) {
+	f := g.units[caster].faction
 	for i in 0 ..< g.unit_count {
-		t := &g.units[i]
-		if i == caster || !t.alive || !unit_visible(g, i, c.faction) { continue }
-		d := hex_distance(from, t.pos)
-		if d > CHANT_RANGE || (d > 1 && !line_of_sight(g, from, t.pos, c.faction)) { continue }
-		if v := ai_chant_value(g, c.faction, i, threat); v > value {
-			best = i
-			value = v
+		if i != caster { v[i] = ai_chant_value(g, f, i, threat) }
+	}
+	return
+}
+
+// The best hex to chant on for the Wololo standing on `from` (ignoring that it
+// may not be there yet), whether to bless or curse, and what it is worth: the
+// sum over every unit the chant would touch.
+ai_best_chant :: proc(g: ^Game, caster: int, from: Hex, values: ^Chant_Values) -> (center: Hex, bless: bool, value: int) {
+	c := &g.units[caster]
+	for row in max(0, from.y - CHANT_RANGE) ..= min(ROWS - 1, from.y + CHANT_RANGE) {
+		for col in max(0, from.x - CHANT_RANGE - 1) ..= min(COLS - 1, from.x + CHANT_RANGE + 1) {
+			h := Hex{col, row}
+			d := hex_distance(from, h)
+			if d > CHANT_RANGE { continue }
+			sums: [2]int // curse, bless
+			for i in 0 ..< g.unit_count {
+				if values[i] == 0 || hex_distance(h, g.units[i].pos) > CHANT_RADIUS { continue }
+				sums[1 if g.units[i].faction == c.faction else 0] += values[i]
+			}
+			for v, b in sums {
+				if v <= value { continue }
+				if !hex_in_view(g, c.faction, h) || (d > 1 && !line_of_sight(g, from, h, c.faction)) { break }
+				center, bless, value = h, b == 1, v
+			}
 		}
 	}
 	return
@@ -543,8 +561,9 @@ ai_chanter_unit :: proc(g: ^Game, unit: int) {
 	view := ai_view(g, unit)
 	threat := ai_threat_map(g, f)
 	costs := movement_costs(g, unit)
-	score :: proc(g: ^Game, unit: int, h: Hex, view: ^Ai_View, threat: ^Hex_Mask) -> [2]int {
-		_, value := ai_best_chant(g, unit, h, threat)
+	values := ai_chant_values(g, unit, threat)
+	score :: proc(g: ^Game, unit: int, h: Hex, view: ^Ai_View, threat: ^Hex_Mask, values: ^Chant_Values) -> [2]int {
+		_, _, value := ai_best_chant(g, unit, h, values)
 		unsafe := 1 if mask_has(threat, h) else 0
 		approach := 0
 		if value == 0 {
@@ -559,12 +578,12 @@ ai_chanter_unit :: proc(g: ^Game, unit: int) {
 		return {-value * 4 + unsafe * 40 + approach, 0}
 	}
 	best := u.pos
-	best_score := score(g, unit, u.pos, &view, threat)
+	best_score := score(g, unit, u.pos, &view, threat, &values)
 	for row in 0 ..< ROWS {
 		for col in 0 ..< COLS {
 			h := Hex{col, row}
 			if !can_move(g, unit, h, &costs) { continue }
-			sc := score(g, unit, h, &view, threat)
+			sc := score(g, unit, h, &view, threat, &values)
 			sc.y = costs[row][col]
 			if sc.x < best_score.x || (sc.x == best_score.x && sc.y < best_score.y) {
 				best = h
@@ -574,8 +593,8 @@ ai_chanter_unit :: proc(g: ^Game, unit: int) {
 	}
 	if best != u.pos { move_unit(g, unit, best) }
 	if !u.alive { return } // a pike may have struck it on the way
-	if t, value := ai_best_chant(g, unit, u.pos, threat); value > 0 {
-		chant(g, unit, t)
+	if center, bless, value := ai_best_chant(g, unit, u.pos, &values); value > 0 && chant_at(g, unit, center, bless) {
+		// chanted
 	} else if can_fortify(g, unit) && mask_has(threat, u.pos) && ai_threatened(g, unit) {
 		fortify(g, unit)
 	}

@@ -217,7 +217,7 @@ next:
    computer plays its Wololos first each turn, so a blessing can go on an
    attack the same turn; it blesses a friend that can strike now (else one in
    the enemy's reach) and curses an enemy its units can reach, weighting by
-   points. **Wololo 12 points**: about a kobold beside kobolds (1w4k vs 5k
+   points. **Wololo 12 points** (20 from November 7, 2026: see Area chants): about a kobold beside kobolds (1w4k vs 5k
    45%), worth more beside big units (1w2h2k vs 1k2h2k 55%, 1w1c3k vs 1c4k
    61%). The warband has one (nine a side, 190 points).
 5. Sprites and sounds for the new types; scenarios with mixed bands. **Done
@@ -272,7 +272,8 @@ each setting):
 - **Hills:** flat, some hills (15%), hilly (35%).
 - **Sides:** you play Red against the computer, or computer vs computer.
 - **Each side's army:** a ready-made one (Patrol 44 points, Hunters 87,
-  Shield wall 134, Champion's guard 157, Warband 190, Horde 210), one bought
+  Shield wall 142, Champion's guard 165, Warband 198, Horde 210; prices as of
+  the Wololo's area chant), one bought
   unit by unit, or a random one filled up to the budget.
 - **Points to buy or draw armies:** 100, 150, 200, 250 or 300 (for bought and
   random armies; at most 30 units a side).
@@ -283,6 +284,25 @@ start with an empty bought army or one over the budget. The last setup is
 kept in the browser. Rules side: `src/game/custom.odin` (`Custom_Battle`,
 `new_custom_game`); armies stand in a block two columns in from each edge,
 shooters and the Wololo in the back column, and forest grows round them.
+
+## Area chants (November 7, 2026)
+
+The user's direction: the Wololo's chant should be an area effect, "a center
+hex and all the hexes adjacent to it". Built as: the Wololo aims at a hex in
+view within 3 (line of sight beyond 1); a blessing lands on every friend on
+that hex and the six around it, a curse on every enemy there that its side
+can see. Choices made without asking: one chant blesses or curses, not both;
+hidden enemies are not cursed (no fog leaks in the log); the Wololo never
+blesses itself, so a lone Wololo still finishes its move. On the page, OK on
+an enemy in range still curses round it; C (or the unit menu) aims a
+blessing, then a curse, at the cursor, lighting the seven hexes and ringing
+the units it would touch.
+
+Price: 12 to **20 points** (simulator: 1w10k v 12k 50%, 1w2h2k v 2k2h2k 57%,
+1w1c3k v 1c5k 51%; at 12 it won 59-70% against a kobold in its place). The
+mixed-band scenarios were re-balanced: Blue's skirmishers get a kobold (123),
+the horde a kobold (166), the woodland archers a kobold (137); the heights
+stay (Red 106 v Blue 162, 47% / 53%).
 
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
