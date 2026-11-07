@@ -435,6 +435,7 @@ press :: proc "c" (btn: Input) {
 }
 
 on_input :: proc(btn: Input) {
+	touched = false // keys and the gamepad get their own hints
 	if menu_open() {
 		menu_input(btn)
 		return
@@ -622,6 +623,24 @@ mouse_move :: proc "c" (x, y: f32) {
 @(export)
 mouse_click :: proc "c" (x, y: f32) {
 	context = ctx
+	touched = false
+	click(x, y, false)
+}
+
+// A tap on a touch screen. There is no hovering, so a tap on a new hex only
+// moves the cursor there to inspect it (the panel shows what is on it), or
+// selects your own unit there; a tap on the hex the cursor is already on acts,
+// as OK does. Menus and buttons act at once.
+@(export)
+touch_tap :: proc "c" (x, y: f32) {
+	context = ctx
+	touched = true
+	click(x, y, true)
+}
+
+touched := false // the last press was a tap (the hints say so)
+
+click :: proc(x, y: f32, tap: bool) {
 	if menu_open() {
 		if i := menu_item_at(x, y); i >= 0 {
 			menu_sel[menu_top()] = i
@@ -645,6 +664,15 @@ mouse_click :: proc "c" (x, y: f32) {
 	}
 	h := screen_to_hex(x, y)
 	if x >= PANEL_X - 4 || !game.in_bounds(h) { return }
+	if tap && !(cursor_on && h == cursor) {
+		put_cursor(h) // look first
+		cursor_on = true
+		// one of your own units is selected at once (selecting does nothing
+		// that cannot be undone); moves, attacks and chants wait for a second tap
+		u := game.unit_at(&g, h)
+		if u >= 0 && u != selected && chant_mode == .Off && human_turn() && g.units[u].faction == g.current { play_ok() }
+		return
+	}
 	put_cursor(h)
 	play_ok()
 }
@@ -678,6 +706,7 @@ HELP := [?]string {
 	"Each block cancels a hit; each hit left costs a body point.",
 	"",
 	"Cursor: arrows, WASD, D-pad or the mouse.  OK: Space, Enter, A or click.",
+	"Touch: tap a hex to look at it, tap it again to act there.",
 	"Back / menu: Esc, B (Start opens the menu too).",
 	"OK on your unit selects it; OK on a yellow hex moves it there; OK on a",
 	"red-ringed enemy attacks. OK on the selected unit again: fortify, finish",

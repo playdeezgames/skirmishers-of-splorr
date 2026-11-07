@@ -592,6 +592,14 @@ control_hint :: proc() -> string {
 		return "Up/Down choose   OK pick   Cancel back"
 	case !human_turn():
 		return "Cancel: menu"
+	case touched && chant_mode == .Bless:
+		return "Tap a hex to aim, again to bless round it"
+	case touched && chant_mode == .Curse:
+		return "Tap a hex to aim, again to curse round it"
+	case touched && selected >= 0:
+		return "Tap a hex to look, again to move or attack there"
+	case touched:
+		return "Tap your unit to select it; tap a hex to look"
 	case chant_mode == .Bless:
 		return "OK: bless friends on and round the cursor   Cancel: stop"
 	case chant_mode == .Curse:

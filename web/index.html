@@ -135,7 +135,8 @@
 			return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
 		};
 		cv.addEventListener("pointermove", (e) => {
-			if (memory.exports) memory.exports.mouse_move(...toCanvas(e));
+			// a finger dragging is not hovering: only the mouse moves the cursor
+			if (memory.exports && e.pointerType === "mouse") memory.exports.mouse_move(...toCanvas(e));
 		});
 		cv.addEventListener("pointerleave", () => {
 			if (memory.exports) memory.exports.mouse_move(-1, -1);
@@ -143,6 +144,11 @@
 		cv.addEventListener("pointerdown", (e) => {
 			if (!memory.exports) return;
 			const [x, y] = toCanvas(e);
+			if (e.pointerType === "touch" || e.pointerType === "pen") {
+				// no hover on a touch screen: a tap looks first (touch_tap)
+				memory.exports.touch_tap(x, y);
+				return;
+			}
 			memory.exports.mouse_move(x, y);
 			memory.exports.mouse_click(x, y);
 		});

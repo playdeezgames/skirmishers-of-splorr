@@ -77,7 +77,17 @@ results exactly.
 
 ## Interface and presentation
 
-- **Touch:** tap a hex to inspect it (as hover does on desktop).
+- **Touch:** tap a hex to inspect it (as hover does on desktop). **Built
+  November 7, 2026:** a tap on a new hex moves the cursor there and the panel
+  shows what is on it (hex, unit, whether a shot is blocked); a tap on your own
+  unit selects it straight away; a second tap on the same hex acts (move,
+  attack, chant, or the unit menu on the selected unit). Menus and buttons act
+  on the first tap. Dragging a finger does not move the cursor. The hint line
+  says "Tap a hex to look, again to...". The mouse still acts on the first
+  click. Checked at tablet size (768 wide: the 1060x580 canvas shows at 72%,
+  readable). **On a phone in portrait (375 wide) the canvas is 35% size: hexes
+  about 11 px and panel text about 4 px, too small to play; landscape is
+  better (about 57%). A phone layout is not done.**
 - **Animation:** units slide along their path and attacks flash, so the computer's
   turn can be followed.
 - **Art and sound** made with the Anvil tools, as for other SPLORR!! games.
@@ -350,7 +360,8 @@ The user's list of what the game still needs, to be planned one at a time:
 4. Fog of war. **Done November 6, 2026.**
 5. Computer player improvements. **Done November 6, 2026.**
 6. Move animation; Anvil art and sound. **Done November 6, 2026.**
-7. Tap to inspect (check on a touch-size screen).
+7. Tap to inspect (check on a touch-size screen). **Done November 7, 2026**
+   (tablet size works; phones need their own layout).
 8. Armour and more unit types (see that section); parts 1-4 done November 6,
    2026, part 5 (mixed-band scenarios) November 7, 2026. **Done.**
 9. Interface overhaul: menus, one control scheme for gamepad and keyboard,

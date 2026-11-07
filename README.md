@@ -21,15 +21,17 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 
 The game starts on a title screen (Play, Options, How to play); Play lists the battles. Everything works with six buttons, on any of:
 
-| | Keyboard | Gamepad | Mouse |
-|---|---|---|---|
-| Move the cursor or the menu highlight | arrows or WASD | D-pad or left stick | point |
-| OK | Space or Enter | A | click |
-| Cancel / back | Esc or Backspace | B | the Menu button |
-| Menu | Tab or P (Esc with nothing selected) | Start or Select | the Menu button |
+| | Keyboard | Gamepad | Mouse | Touch |
+|---|---|---|---|---|
+| Move the cursor or the menu highlight | arrows or WASD | D-pad or left stick | point | tap a hex |
+| OK | Space or Enter | A | click | tap the cursor's hex again |
+| Cancel / back | Esc or Backspace | B | the Menu button | the Menu button |
+| Menu | Tab or P (Esc with nothing selected) | Start or Select | the Menu button | the Menu button |
+
+On a touch screen a tap on a hex shows what is there before anything happens; tap it again to move, attack or chant there. A tap on one of your own units selects it at once. Tablets work well; on a phone, turn it sideways (the board is small).
 
 - When your turn starts, your first unit is selected and the cursor is on it. Yellow hexes show where it can move and a red ring marks an enemy it can attack: OK on either does it. After a unit acts, the next one is selected for you.
-- OK on another of your units selects it. OK on the selected unit again opens its menu: **Fortify**, **Finish move**, and for a Wololo **Chant** (bless a friend).
+- OK on another of your units selects it. OK on the selected unit again opens its menu: **Fortify**, **Finish move**, and for a Wololo **Chant** (bless or curse an area).
 - Cancel drops the selection; with nothing selected it opens the menu (Resume, Options, Restart this battle, Quit to title). Restarting or quitting a battle in progress asks first.
 - **The turn ends by itself** once none of your units can do anything more. **Options** can make you press **End turn** instead (in the menu, the panel button or **E**); there you also turn **sound** on or off and choose the **computer speed**. Options are remembered in your browser.
 - Keyboard shortcuts: **F** finish move, **C** chant mode (Wololo), **M** sound, **E** end turn, **V** switch whose view a computer-against-computer battle shows (also in the menu).
