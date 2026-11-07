@@ -195,7 +195,8 @@
 		requestAnimationFrame(pollPads);
 
 		// ?scenario=2 watches the computer play both sides.
-		// QA: ?steps=N then plays N computer actions at once (for screenshots).
+		// QA: ?watch=1 hands every side to the computer; ?steps=N then plays N
+		// computer actions at once (for screenshots).
 		const params = new URLSearchParams(location.search);
 		const wanted = parseInt(params.get("scenario"), 10);
 		const steps = parseInt(params.get("steps"), 10);
@@ -204,6 +205,7 @@
 				if (memory.exports && memory.exports.load_scenario) {
 					clearInterval(timer);
 					if (wanted > 0) memory.exports.load_scenario(wanted);
+					if (params.get("watch") === "1") memory.exports.debug_watch();
 					if (steps > 0) memory.exports.debug_ai_steps(steps);
 				}
 			}, 50);
