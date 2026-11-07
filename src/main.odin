@@ -1,8 +1,9 @@
 #+build js
 package main
 
-// Browser side: mouse and key input, canvas drawing and the frame loop.
-// All rules live in the game package; this file only shows them.
+// Browser side: the frame loop, the map and the panel. Menus and input are in
+// ui.odin, animation in anim.odin. All rules live in the game package; this
+// layer only shows them.
 
 import "base:runtime"
 import "core:fmt"
@@ -31,6 +32,9 @@ foreign canvas {
 	is_muted :: proc() -> b32 ---
 	// a sprite from art.png centred on (cx, cy), at a whole-number scale
 	blit :: proc(sprite: i32, cx, cy: f32, scale: f32) ---
+	// settings kept in the browser; load gives -1 for one never saved
+	load_option :: proc(id: i32) -> i32 ---
+	save_option :: proc(id: i32, value: i32) ---
 }
 
 // Sprites in art.png, in the Anvil sprite-set order (assets/art/world.json).
@@ -113,28 +117,28 @@ GOLD :: Color{1, 0.85, 0.3}
 Button :: struct {
 	x, y, w, h: f32,
 }
-FORTIFY_BUTTON :: Button{PANEL_X, 250, 90, 34}
-FINISH_MOVE_BUTTON :: Button{PANEL_X + 94, 250, 90, 34}
-END_TURN_BUTTON :: Button{PANEL_X + 188, 250, 90, 34}
-NEW_GAME_BUTTON :: Button{PANEL_X + 282, 250, 90, 34}
 FORTIFIED_RING :: Color{0.92, 0.86, 0.7}
-// scenario picker, beside the scenario name: changing scenario starts a new game
-PREV_SCENARIO_BUTTON :: Button{PANEL_X, 41, 20, 18}
-NEXT_SCENARIO_BUTTON :: Button{PANEL_X + 24, 41, 20, 18}
-MUTE_BUTTON :: Button{PANEL_X + 292, 12, 84, 24}
-CHANT_BUTTON :: Button{PANEL_X + 292, 100, 84, 24} // shown while a Wololo is selected
+MENU_BUTTON :: Button{PANEL_X + 292, 12, 84, 24} // for the mouse; Esc, B or Start do the same
+END_TURN_BUTTON :: Button{PANEL_X, 282, 120, 30} // only while you must end turns yourself (Options)
+AUTO_END_DELAY :: 0.5 // seconds to see your last action before the turn ends by itself
+BACKDROP_SCENARIO :: 1 // the computer battle behind the title screen
 
-// With a Wololo selected, chant mode makes a click on a friend bless it
-// instead of selecting it (a click on an enemy in range always curses).
+// With a Wololo selected, chant mode makes OK on a friend bless it instead of
+// selecting it (OK on an enemy in range always curses).
 chanting := false
 
 ctx: runtime.Context
 g: game.Game
 scenario := 0
 selected := -1
-hover := game.Hex{-1, -1}
+cursor := game.Hex{10, 10}
+cursor_pref_x: f32 // where up and down aim across the staggered rows
+cursor_on := false // drawn once the player has moved it (or a unit was selected)
 ai_timer: f64
-// computer-vs-computer only: whose fog the map shows (V cycles it)
+auto_end_timer: f64
+game_over_shown := false
+backdrop_timer: f64
+// computer-vs-computer only: whose fog the map shows (View in the pause menu, or V)
 View_Mode :: enum {
 	Everything,
 	Red,
@@ -145,14 +149,21 @@ view_mode := View_Mode.Everything
 main :: proc() {
 	ctx = context
 	js.add_window_event_listener(.Key_Down, nil, on_key)
-	start_game(0)
+	load_options()
+	go_title()
 }
 
 start_game :: proc(n: int) {
 	scenario = n
 	game.new_game(&g, n, u64(time.now()._nsec))
 	selected = -1
+	chanting = false
+	cursor_on = false
+	put_cursor({game.COLS / 2, game.ROWS / 2})
 	ai_timer = 0
+	auto_end_timer = 0
+	backdrop_timer = 0
+	game_over_shown = false
 	anim_skip()
 	last_winner = -1
 	last_turn_owner = -1
@@ -162,12 +173,15 @@ start_game :: proc(n: int) {
 last_winner := -1
 last_turn_owner := -1
 
-// The page calls this for a ?scenario=N address (1-based).
+// The page calls this for a ?scenario=N address (1-based): straight into it.
 @(export)
 load_scenario :: proc "c" (n: i32) {
 	context = ctx
 	idx := int(n) - 1
-	if idx >= 0 && idx < len(game.SCENARIOS) { start_game(idx) }
+	if idx >= 0 && idx < len(game.SCENARIOS) {
+		menu_depth = 0
+		start_game(idx)
+	}
 }
 
 // QA hook for screenshots (?steps=N): plays up to N computer actions at once.
@@ -217,114 +231,18 @@ hex_centre :: proc(h: game.Hex) -> [2]f32 {
 	return game.hex_to_pixel(h, HEX_R) + {MAP_X, MAP_Y}
 }
 
-@(export)
-mouse_move :: proc "c" (x, y: f32) {
-	context = ctx
-	h := screen_to_hex(x, y)
-	hover = h if game.in_bounds(h) && x < PANEL_X - 4 else {-1, -1}
-}
-
-// Starting a new game (New game, N, or another scenario) throws the current
-// one away, so it asks first unless the game is already won.
-CONFIRM_BOX :: Button{170, 215, 320, 130}
-CONFIRM_YES :: Button{CONFIRM_BOX.x + 20, CONFIRM_BOX.y + 82, 130, 32}
-CONFIRM_NO :: Button{CONFIRM_BOX.x + 170, CONFIRM_BOX.y + 82, 130, 32}
-
-confirming := false
-confirm_scenario: int // the scenario to start on yes
-
-ask_new_game :: proc(n: int) {
-	if g.winner >= 0 {
-		start_game(n)
-		return
-	}
-	confirming = true
-	confirm_scenario = n
-}
-
-answer_new_game :: proc(yes: bool) {
-	confirming = false
-	if yes { start_game(confirm_scenario) }
-}
-
-@(export)
-mouse_click :: proc "c" (x, y: f32) {
-	context = ctx
-	if confirming {
-		if in_button(CONFIRM_YES, x, y) { answer_new_game(true) }
-		if in_button(CONFIRM_NO, x, y) { answer_new_game(false) }
-		return
-	}
-	if in_button(NEW_GAME_BUTTON, x, y) {
-		ask_new_game(scenario)
-		return
-	}
-	if in_button(MUTE_BUTTON, x, y) {
-		toggle_mute()
-		return
-	}
-	if in_button(PREV_SCENARIO_BUTTON, x, y) {
-		cycle_scenario(-1)
-		return
-	}
-	if in_button(NEXT_SCENARIO_BUTTON, x, y) {
-		cycle_scenario(1)
-		return
-	}
-	if !human_turn() || anim_busy() { return }
-	if in_button(END_TURN_BUTTON, x, y) {
-		end_human_turn()
-		return
-	}
-	if in_button(FINISH_MOVE_BUTTON, x, y) {
-		finish_selected_move()
-		return
-	}
-	if in_button(FORTIFY_BUTTON, x, y) {
-		fortify_selected()
-		return
-	}
-	if in_button(CHANT_BUTTON, x, y) && selected_chants() {
-		chanting = !chanting
-		return
-	}
-	h := screen_to_hex(x, y)
-	if x >= PANEL_X - 4 || !game.in_bounds(h) {
-		selected = -1
-		return
-	}
-	other := game.unit_at(&g, h)
-	if selected_chants() && other >= 0 && (chanting || g.units[other].faction != g.current) && game.can_chant(&g, selected, other) {
-		game.chant(&g, selected, other) // this ends the Wololo's move
-		chanting = false
-		select_next_unit()
-		return
-	}
-	chanting = false
-	if other >= 0 && g.units[other].faction == g.current {
-		selected = other
-		return
-	}
-	if selected >= 0 {
-		if other >= 0 && game.can_attack(&g, selected, other) {
-			game.attack(&g, selected, other) // this ends the unit's move
-			select_next_unit()
-			return
-		}
-		if game.move_unit(&g, selected, h) { return }
-	}
-	selected = -1
-}
-
 // Selects the next of the player's units whose move is not over, after the
-// selected one (wrapping round), or nothing if all have ended.
+// selected one (wrapping round), or nothing if all have ended; the cursor
+// follows it.
 select_next_unit :: proc() {
-	start := max(selected, 0)
-	for k in 1 ..= g.unit_count {
-		i := (start + k) % g.unit_count
+	n := g.unit_count
+	for k in 1 ..= n {
+		i := ((selected + k) % n + n) % n
 		u := &g.units[i]
 		if u.alive && u.faction == g.current && !game.unit_finished(&g, i) {
 			selected = i
+			put_cursor(u.pos)
+			cursor_on = true
 			return
 		}
 	}
@@ -345,62 +263,17 @@ finish_selected_move :: proc() {
 	if game.finish_move(&g, selected) { select_next_unit() }
 }
 
-cycle_scenario :: proc(step: int) {
-	n := len(game.SCENARIOS)
-	ask_new_game((scenario + step + n) % n)
-}
-
 // Refused by the rules while any of the player's units has not ended its move.
 end_human_turn :: proc() {
 	if game.end_turn(&g) {
 		selected = -1
+		chanting = false
 		ai_timer = 0
 	}
 }
 
-on_key :: proc(e: js.Event) {
-	if e.kind != .Key_Down || e.key.repeat { return }
-	if confirming {
-		switch e.key.key {
-		case "y", "Y", "Enter":       answer_new_game(true)
-		case "n", "N", "Escape", " ": answer_new_game(false)
-		case "m", "M":                toggle_mute()
-		case:                         return
-		}
-		js.event_prevent_default()
-		return
-	}
-	if anim_busy() {
-		switch e.key.key {
-		case " ", "Enter", "d", "D", "f", "F": return // wait for the animation
-		}
-	}
-	switch e.key.key {
-	case " ", "Enter":
-		if human_turn() { end_human_turn() }
-	case "c", "C":
-		if selected_chants() { chanting = !chanting }
-	case "d", "D":
-		fortify_selected()
-	case "f", "F":
-		finish_selected_move()
-	case "Escape":
-		selected = -1
-	case "n", "N":
-		ask_new_game(scenario)
-	case "v", "V":
-		if has_human() { return }
-		view_mode = View_Mode((int(view_mode) + 1) % len(View_Mode))
-	case "m", "M":
-		toggle_mute()
-	case "[":
-		cycle_scenario(-1)
-	case "]":
-		cycle_scenario(1)
-	case:
-		return
-	}
-	js.event_prevent_default()
+show_end_turn_button :: proc() -> bool {
+	return !auto_end && human_turn()
 }
 
 text :: proc(s: string, x, y: f32, size: f32 = 14, color := WHITE, align: i32 = 0) {
@@ -436,22 +309,46 @@ step :: proc(dt: f64, c: runtime.Context) -> bool {
 	context = ctx
 	free_all(context.temp_allocator)
 
-	anim_update(dt)
-	if game.is_computer_turn(&g) && !anim_busy() && !confirming {
-		ai_timer += dt
+	sdt := dt * 2 if fast else dt // Options: computer speed
+	anim_update(sdt)
+	// the computer plays while no menu is open (the title screen's battle
+	// plays on behind it)
+	if game.is_computer_turn(&g) && !anim_busy() && (!menu_open() || on_title()) {
+		ai_timer += sdt
 		if ai_timer >= AI_DELAY {
 			ai_timer = 0
 			game.ai_step(&g)
 			anim_update(0) // start its animation this frame
 		}
 	}
-	turn_sounds()
+	// the turn ends by itself once none of your units can do anything more
+	if auto_end && human_turn() && !menu_open() && !anim_busy() && game.units_left_to_act(&g) == 0 {
+		auto_end_timer += dt
+		if auto_end_timer >= AUTO_END_DELAY { end_human_turn() }
+	} else {
+		auto_end_timer = 0
+	}
+	if g.winner >= 0 && !anim_busy() {
+		if on_title() {
+			// the backdrop battle starts over after a moment
+			backdrop_timer += dt
+			if backdrop_timer > 2 {
+				game.new_game(&g, BACKDROP_SCENARIO, u64(time.now()._nsec))
+				anim_skip()
+				backdrop_timer = 0
+			}
+		} else if !game_over_shown {
+			game_over_shown = true
+			push_menu(.Game_Over)
+		}
+	}
+	if !on_title() { turn_sounds() }
 	if selected >= 0 && !g.units[selected].alive { selected = -1 }
 
 	clear_canvas(0.1, 0.1, 0.13)
 	draw_map()
-	draw_panel()
-	if confirming { draw_confirm() }
+	if !on_title() { draw_panel() }
+	draw_menus()
 	return true
 }
 
@@ -468,6 +365,9 @@ turn_sounds :: proc() {
 	owner := g.current + g.turn * game.MAX_FACTIONS
 	if human_turn() && owner != last_turn_owner {
 		if last_turn_owner >= 0 { play(.Your_Turn) }
+		// your turn: the first unit able to act is selected, the cursor on it
+		selected = -1
+		select_next_unit()
 	}
 	last_turn_owner = owner
 }
@@ -575,23 +475,17 @@ draw_map :: proc() {
 		p := hex_centre(g.units[selected].pos)
 		draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, 1, 1, 1, 1, 3)
 	}
-	if hover.x >= 0 {
-		p := hex_centre(hover)
-		draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, GOLD.r, GOLD.g, GOLD.b, 0.9, 2)
+	if cursor_on && !menu_open() {
+		p := hex_centre(cursor)
+		draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, GOLD.r, GOLD.g, GOLD.b, 0.95, 2.5)
 	}
 }
 
 draw_panel :: proc() {
 	x := PANEL_X
 	text("Skirmishers of SPLORR!!", x, 24, 20, GOLD)
-	button(MUTE_BUTTON, "Sound: off" if is_muted() else "Sound: on", true)
-	button(PREV_SCENARIO_BUTTON, "<", true)
-	button(NEXT_SCENARIO_BUTTON, ">", true)
-	text(game.SCENARIOS[scenario].name, x + 52, 50, 13, GREY)
-	if !has_human() {
-		names := [View_Mode]string{.Everything = "everything", .Red = "Red's view", .Blue = "Blue's view"}
-		text(fmt.tprintf("Map shows %s (V to change)", names[view_mode]), x, 102, 13, GREY)
-	}
+	if !on_title() { button(MENU_BUTTON, "Menu (Esc)", !menu_open()) }
+	text(game.SCENARIOS[scenario].name, x, 50, 13, GREY)
 
 	f := &g.factions[g.current]
 	status: string
@@ -603,117 +497,136 @@ draw_panel :: proc() {
 	case:
 		status = fmt.tprintf("Turn %d: %s is thinking...", g.turn, f.name)
 	}
-	text(status, x, 80, 16, f.color if g.winner < 0 else g.factions[g.winner].color)
-
-	y := f32(110)
-	if selected >= 0 {
-		u := &g.units[selected]
-		ut := game.unit_type(u)
-		text(fmt.tprintf("%s %s (%d points)", g.factions[u.faction].name, ut.name, ut.points), x, y, 15)
-		armour := "" if ut.armour == .None else fmt.tprintf(" (%s)", game.ARMOURS[ut.armour].name)
-		text(fmt.tprintf("Body %d/%d   Move %s/%d   Sight %d", u.body, ut.body, points_text(u.moves_left), ut.move, ut.vision), x, y + 18, 13, GREY)
-		text(fmt.tprintf("Defence %s%s", dice_text(game.unit_defence(ut)), armour), x, y + 34, 13, GREY)
-		wy := y + 50
-		for w in ut.weapons {
-			wp := &game.WEAPONS[w]
-			reach := fmt.tprintf("range %d", wp.max_range) if wp.min_range == wp.max_range else fmt.tprintf("range %d-%d", wp.min_range, wp.max_range)
-			note := ", pierces armour" if wp.pierce else (", strikes first" if wp.first_strike else "")
-			text(fmt.tprintf("%s: %s, %s%s", wp.name, dice_text(wp.attack), reach, note), x, wy, 13, GREY)
-			wy += 18
-		}
-		if ut.chants {
-			text(fmt.tprintf("chant: bless a friend or curse a foe, range %d", game.CHANT_RANGE), x, wy, 13, GREY)
-			wy += 18
-		}
-		state := "may chant" if ut.chants else "may attack"
-		if ut.chants && chanting { state = "chant mode: click a friend to bless it" }
-		if u.boon != .None { state = fmt.tprintf("%s; %s", state, "blessed" if u.boon == .Blessed else "cursed") }
-		if u.fortified {
-			state = "fortified: defends with advantage"
-		} else if u.attacked {
-			state = "acted: done for this turn"
-		} else if u.done {
-			state = "move finished"
-		} else if game.unit_finished(&g, selected) {
-			state = "no moves left and nobody in range"
-		}
-		text(state, x, wy, 13, GREY)
-	} else if human_turn() {
-		text("Click one of your units to select it.", x, y, 13, GREY)
-		text("Yellow: moves. Red: targets. ?: last seen.", x, y + 16, 13, GREY)
-		text("Kobolds carry daggers; slingers whirl slings.", x, y + 32, 13, GREY)
-		text("Pip: moved. Grey: done. Pale ring: fortified.", x, y + 48, 13, GREY)
-		text("D: fortify (before moving). F: finish move.", x, y + 64, 13, GREY)
-		text("Space: end turn. N: new. [ ]: scenario. M: sound.", x, y + 80, 13, GREY)
+	text(status, x, 76, 16, f.color if g.winner < 0 else g.factions[g.winner].color)
+	if !has_human() {
+		names := [View_Mode]string{.Everything = "everything", .Red = "Red's side", .Blue = "Blue's side"}
+		text(fmt.tprintf("Showing %s (View in the menu)", names[view_mode]), x, 96, 12, GREY)
 	}
+
+	// the selected unit, or else the one under the cursor
 	view := viewer()
-	if hover.x >= 0 && !game.hex_seen(&g, view, hover) {
-		text(fmt.tprintf("Hex %d,%d: unexplored", hover.x, hover.y), x, 210, 13, GREY)
-	} else if hover.x >= 0 {
-		t := game.terrain_at(&g, hover)
-		cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
-		if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road, false, false))) }
-		text(fmt.tprintf("Hex %d,%d: %s%s (%s)", hover.x, hover.y, game.is_high(&g, hover) ? "high " : "", game.TERRAIN_NAMES[t], cost), x, 210, 13, GREY)
-		if hu := game.unit_at(&g, hover); hu >= 0 && game.unit_visible(&g, hu, view) {
-			u := &g.units[hu]
-			label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
-			if u.boon != .None { label = fmt.tprintf("%s, %s", label, "blessed" if u.boon == .Blessed else "cursed") }
-			if .Pike in game.unit_type(u).weapons && u.faction != g.current {
-				label = fmt.tprintf("%s, %s", label, "has struck first" if u.reacted else "ready to strike first")
-			}
-			// explain a shot the selected unit cannot take because of forest
-			if selected >= 0 && u.faction != g.units[selected].faction {
-				d := game.hex_distance(g.units[selected].pos, u.pos)
-				_, in_range := game.weapon_in_range(&g, game.unit_type(&g.units[selected]), g.units[selected].pos, u.pos)
-				if game.needs_line_of_sight(d) && in_range && !game.line_of_sight(&g, g.units[selected].pos, u.pos, g.units[selected].faction) {
-					label = fmt.tprintf("%s: shot blocked", label)
-				}
-			}
-			text(label, x, 228, 13, g.factions[u.faction].color)
-		} else if view != game.NO_FACTION {
-			for i in 0 ..< g.unit_count {
-				if pos, ok := game.sighting(&g, view, i); ok && pos == hover {
-					fc := &g.factions[g.units[i].faction]
-					text(fmt.tprintf("%s %s last seen here", fc.name, game.unit_type(&g.units[i]).name), x, 228, 13, fc.color)
-					break
-				}
-			}
-			if !game.hex_in_view(&g, view, hover) { text("out of sight", x + 260, 228, 11, GREY) }
-		}
+	shown := selected
+	if shown < 0 {
+		if hu := game.unit_at(&g, cursor); hu >= 0 && cursor_on && game.unit_visible(&g, hu, view) { shown = hu }
 	}
+	y := f32(116)
+	if shown >= 0 {
+		draw_unit_card(shown, x, y)
+	} else if human_turn() {
+		text("Choose one of your units (OK on it).", x, y, 13, GREY)
+	}
+	draw_hex_info(x, 240, view)
 
-	left := game.units_left_to_act(&g) if human_turn() else 0
-	button(FORTIFY_BUTTON, "Fortify", human_turn() && selected >= 0 && game.can_fortify(&g, selected))
-	if selected_chants() { button(CHANT_BUTTON, "Chanting" if chanting else "Chant (C)", !g.units[selected].done) }
-	button(FINISH_MOVE_BUTTON, "Finish move", human_turn() && selected >= 0 && !game.unit_finished(&g, selected))
-	button(END_TURN_BUTTON, "End turn", human_turn() && left == 0)
-	button(NEW_GAME_BUTTON, "New game", true)
-	if left > 0 {
-		text(fmt.tprintf("%d unit%s still to move", left, "" if left == 1 else "s"), x + 188, 292, 11, GREY)
+	if show_end_turn_button() {
+		left := game.units_left_to_act(&g)
+		button(END_TURN_BUTTON, "End turn (E)", left == 0 && !anim_busy())
+		if left > 0 { text(fmt.tprintf("%d unit%s still to act", left, "" if left == 1 else "s"), x + 130, 297, 12, GREY) }
+	} else if human_turn() {
+		left := game.units_left_to_act(&g)
+		msg := "the turn ends by itself" if left == 0 else fmt.tprintf("%d unit%s still to act", left, "" if left == 1 else "s")
+		text(msg, x, 297, 12, GREY)
 	}
 
 	for i in 0 ..< g.faction_count {
 		fc := &g.factions[i]
 		who := "you" if fc.controller == .Human else "computer"
-		text(fmt.tprintf("%s (%s): %d units, %d points", fc.name, who, game.living_units(&g, i), game.army_points(&g, i)), x, 306 + f32(i) * 18, 13, fc.color)
+		text(fmt.tprintf("%s (%s): %d units, %d points", fc.name, who, game.living_units(&g, i), game.army_points(&g, i)), x, 324 + f32(i) * 18, 13, fc.color)
 	}
 
-	text("Log", x, 356, 14, GOLD)
+	text("Log", x, 366, 14, GOLD)
 	for i in 0 ..< g.log_count {
 		shade := 1 - f32(i) * 0.06
-		text(game.log_line(&g, i), x, 376 + f32(i) * 15, 11, WHITE * shade)
+		text(game.log_line(&g, i), x, 384 + f32(i) * 14, 11, WHITE * shade)
 	}
+	text(control_hint(), x, f32(CANVAS_H) - 12, 11, Color{0.75, 0.75, 0.55})
 }
 
-draw_confirm :: proc() {
-	fill_rect(0, 0, CANVAS_W, CANVAS_H, 0, 0, 0, 0.55)
-	b := CONFIRM_BOX
-	fill_rect(b.x, b.y, b.w, b.h, 0.14, 0.15, 0.2, 1)
-	fill_rect(b.x, b.y, b.w, 3, GOLD.r, GOLD.g, GOLD.b, 1)
-	what := "Start a new game?" if confirm_scenario == scenario else "Switch scenario?"
-	text(what, b.x + b.w / 2, b.y + 28, 17, GOLD, 1)
-	if confirm_scenario != scenario { text(game.SCENARIOS[confirm_scenario].name, b.x + b.w / 2, b.y + 48, 12, WHITE, 1) }
-	text("The game in progress will be lost.", b.x + b.w / 2, b.y + 64, 13, GREY, 1)
-	button(CONFIRM_YES, "New game (Y)", true)
-	button(CONFIRM_NO, "Keep playing (N)", true)
+// What OK and Cancel do right now, at the foot of the panel.
+control_hint :: proc() -> string {
+	switch {
+	case menu_open():
+		return "Up/Down choose   OK pick   Cancel back"
+	case !human_turn():
+		return "Cancel: menu"
+	case chanting:
+		return "OK on a gold-ringed friend: bless   Cancel: stop"
+	case selected >= 0:
+		return "OK: move/attack   OK on it: more   Cancel: drop"
+	}
+	return "Arrows/D-pad: cursor   OK: choose unit   Cancel: menu"
+}
+
+draw_unit_card :: proc(i: int, x, y: f32) {
+	u := &g.units[i]
+	ut := game.unit_type(u)
+	text(fmt.tprintf("%s %s (%d points)", g.factions[u.faction].name, ut.name, ut.points), x, y, 15, g.factions[u.faction].color)
+	armour := "" if ut.armour == .None else fmt.tprintf(" (%s)", game.ARMOURS[ut.armour].name)
+	text(fmt.tprintf("Body %d/%d   Move %s/%d   Sight %d", u.body, ut.body, points_text(u.moves_left), ut.move, ut.vision), x, y + 18, 13, GREY)
+	text(fmt.tprintf("Defence %s%s", dice_text(game.unit_defence(ut)), armour), x, y + 34, 13, GREY)
+	wy := y + 50
+	for w in ut.weapons {
+		wp := &game.WEAPONS[w]
+		reach := fmt.tprintf("range %d", wp.max_range) if wp.min_range == wp.max_range else fmt.tprintf("range %d-%d", wp.min_range, wp.max_range)
+		note := ", pierces armour" if wp.pierce else (", strikes first" if wp.first_strike else "")
+		text(fmt.tprintf("%s: %s, %s%s", wp.name, dice_text(wp.attack), reach, note), x, wy, 13, GREY)
+		wy += 16
+	}
+	if ut.chants {
+		text(fmt.tprintf("chant: bless a friend or curse a foe, range %d", game.CHANT_RANGE), x, wy, 13, GREY)
+		wy += 16
+	}
+	if i != selected || u.faction != g.current { return }
+	state := "may chant" if ut.chants else "may attack"
+	if ut.chants && chanting { state = "chant mode: OK on a friend to bless it" }
+	if u.boon != .None { state = fmt.tprintf("%s; %s", state, "blessed" if u.boon == .Blessed else "cursed") }
+	if u.fortified {
+		state = "fortified: defends with advantage"
+	} else if u.attacked {
+		state = "acted: done for this turn"
+	} else if u.done {
+		state = "move finished"
+	} else if game.unit_finished(&g, i) {
+		state = "no moves left and nobody in range"
+	}
+	text(state, x, wy, 13, GOLD)
+}
+
+// The hex under the cursor: its terrain, and who is on it or was last seen there.
+draw_hex_info :: proc(x, y: f32, view: int) {
+	if !cursor_on { return }
+	h := cursor
+	if !game.hex_seen(&g, view, h) {
+		text(fmt.tprintf("Hex %d,%d: unexplored", h.x, h.y), x, y, 13, GREY)
+		return
+	}
+	t := game.terrain_at(&g, h)
+	cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
+	if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road, false, false))) }
+	text(fmt.tprintf("Hex %d,%d: %s%s (%s)", h.x, h.y, game.is_high(&g, h) ? "high " : "", game.TERRAIN_NAMES[t], cost), x, y, 13, GREY)
+	if hu := game.unit_at(&g, h); hu >= 0 && game.unit_visible(&g, hu, view) {
+		u := &g.units[hu]
+		label := fmt.tprintf("%s %s, body %d%s", g.factions[u.faction].name, game.unit_type(u).name, u.body, ", fortified" if u.fortified else "")
+		if u.boon != .None { label = fmt.tprintf("%s, %s", label, "blessed" if u.boon == .Blessed else "cursed") }
+		if .Pike in game.unit_type(u).weapons && u.faction != g.current {
+			label = fmt.tprintf("%s, %s", label, "has struck first" if u.reacted else "ready to strike first")
+		}
+		// explain a shot the selected unit cannot take because something is in the way
+		if selected >= 0 && u.faction != g.units[selected].faction {
+			d := game.hex_distance(g.units[selected].pos, u.pos)
+			_, in_range := game.weapon_in_range(&g, game.unit_type(&g.units[selected]), g.units[selected].pos, u.pos)
+			if game.needs_line_of_sight(d) && in_range && !game.line_of_sight(&g, g.units[selected].pos, u.pos, g.units[selected].faction) {
+				label = fmt.tprintf("%s: shot blocked", label)
+			}
+		}
+		text(label, x, y + 18, 13, g.factions[u.faction].color)
+	} else if view != game.NO_FACTION {
+		for i in 0 ..< g.unit_count {
+			if pos, ok := game.sighting(&g, view, i); ok && pos == h {
+				fc := &g.factions[g.units[i].faction]
+				text(fmt.tprintf("%s %s last seen here", fc.name, game.unit_type(&g.units[i]).name), x, y + 18, 13, fc.color)
+				break
+			}
+		}
+		if !game.hex_in_view(&g, view, h) { text("out of sight", x + 260, y + 18, 11, GREY) }
+	}
 }

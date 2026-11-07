@@ -235,6 +235,16 @@ The user's direction: the interface has grown "it works" clunky. Wanted:
   anything more, the turn ends by itself. Requiring the End turn press stays
   as an option.
 
+**Built November 7, 2026:** a title screen over a computer battle (Play,
+Options, How to play), the battle list, a pause menu (Resume, End turn when
+you must press it, View in computer battles, Options, Restart, Quit), a unit
+menu (OK on the selected unit: Fortify, Finish move, Chant), a game-over menu
+(Play again, Choose a battle, Title, Look at the map), and confirmation before
+throwing a battle away. Controls are a hex cursor and six buttons on keyboard,
+gamepad and mouse; your first unit is selected when your turn starts, and the
+next after each action. Options (end turn, sound, computer speed) are kept in
+the browser. The old panel buttons and the N and [ ] keys are gone.
+
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
 The user's list of what the game still needs, to be planned one at a time:

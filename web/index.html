@@ -112,6 +112,12 @@
 					try { localStorage.setItem("skirmishers.muted", muted ? "1" : "0"); } catch (e) {}
 				},
 				is_muted: () => muted,
+				load_option: (id) => {
+					try { const v = localStorage.getItem("skirmishers.option." + id); return v === null ? -1 : parseInt(v, 10); } catch (e) { return -1; }
+				},
+				save_option: (id, value) => {
+					try { localStorage.setItem("skirmishers.option." + id, String(value)); } catch (e) {}
+				},
 				draw_text: (ptr, len, x, y, size, r, gr, b, align) => {
 					g.font = `${size}px monospace`;
 					g.textAlign = ["left", "center", "right"][align] || "left";
@@ -140,6 +146,53 @@
 			memory.exports.mouse_move(x, y);
 			memory.exports.mouse_click(x, y);
 		});
+
+		// Gamepad: polled every frame and turned into the same seven buttons as
+		// the keyboard (`Input` in src/ui.odin: 0 up, 1 down, 2 left, 3 right,
+		// 4 OK, 5 cancel, 6 menu). Standard mapping: D-pad 12-15 or the left
+		// stick, A (0) OK, B (1) cancel, Start (9) or Select (8) menu. A held
+		// direction repeats.
+		const PAD = { up: 0, down: 1, left: 2, right: 3, ok: 4, cancel: 5, menu: 6 };
+		const padHeld = {};
+		const REPEAT_DELAY = 0.35, REPEAT_EVERY = 0.12;
+		let padLast = performance.now();
+		const pollPads = (now) => {
+			const dt = (now - padLast) / 1000;
+			padLast = now;
+			const down = {};
+			for (const pad of (navigator.getGamepads ? navigator.getGamepads() : [])) {
+				if (!pad) continue;
+				const b = (i) => pad.buttons[i] && pad.buttons[i].pressed;
+				const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
+				if (b(12) || ay < -0.5) down.up = true;
+				if (b(13) || ay > 0.5) down.down = true;
+				if (b(14) || ax < -0.5) down.left = true;
+				if (b(15) || ax > 0.5) down.right = true;
+				if (b(0)) down.ok = true;
+				if (b(1)) down.cancel = true;
+				if (b(9) || b(8)) down.menu = true;
+			}
+			for (const name in PAD) {
+				if (down[name]) {
+					const repeats = PAD[name] <= PAD.right;
+					if (!(name in padHeld)) {
+						padHeld[name] = REPEAT_DELAY;
+						unlockAudio();
+						if (memory.exports && memory.exports.press) memory.exports.press(PAD[name]);
+					} else if (repeats) {
+						padHeld[name] -= dt;
+						if (padHeld[name] <= 0) {
+							padHeld[name] = REPEAT_EVERY;
+							if (memory.exports && memory.exports.press) memory.exports.press(PAD[name]);
+						}
+					}
+				} else {
+					delete padHeld[name];
+				}
+			}
+			requestAnimationFrame(pollPads);
+		};
+		requestAnimationFrame(pollPads);
 
 		// ?scenario=2 watches the computer play both sides.
 		// QA: ?steps=N then plays N computer actions at once (for screenshots).

@@ -19,10 +19,20 @@ Made by an AI agent (Claude Code) at the direction of TheGrumpyGameDev: the code
 
 ## Controls
 
-- **Click** one of your units to select it. Yellow hexes show where it can move and a red outline marks an enemy it can attack. Click a yellow hex to move there, or a red-outlined enemy to attack it.
-- **D** fortify, **F** finish move, **Space** end turn, **Esc** deselect, **N** new game, **[ ]** change scenario (both ask first while a game is in progress), **M** sound on or off (also the Sound button; remembered in your browser). There are buttons for all of these too.
-- Hover over a hex to see its terrain, movement cost and any unit on it.
-- In the computer-against-computer battles, **V** switches the map between everything, Red's view and Blue's view.
+The game starts on a title screen (Play, Options, How to play); Play lists the battles. Everything works with six buttons, on any of:
+
+| | Keyboard | Gamepad | Mouse |
+|---|---|---|---|
+| Move the cursor or the menu highlight | arrows or WASD | D-pad or left stick | point |
+| OK | Space or Enter | A | click |
+| Cancel / back | Esc or Backspace | B | the Menu button |
+| Menu | Tab or P (Esc with nothing selected) | Start or Select | the Menu button |
+
+- When your turn starts, your first unit is selected and the cursor is on it. Yellow hexes show where it can move and a red ring marks an enemy it can attack: OK on either does it. After a unit acts, the next one is selected for you.
+- OK on another of your units selects it. OK on the selected unit again opens its menu: **Fortify**, **Finish move**, and for a Wololo **Chant** (bless a friend).
+- Cancel drops the selection; with nothing selected it opens the menu (Resume, Options, Restart this battle, Quit to title). Restarting or quitting a battle in progress asks first.
+- **The turn ends by itself** once none of your units can do anything more. **Options** can make you press **End turn** instead (in the menu, the panel button or **E**); there you also turn **sound** on or off and choose the **computer speed**. Options are remembered in your browser.
+- Keyboard shortcuts: **F** finish move, **C** chant mode (Wololo), **M** sound, **E** end turn, **V** switch whose view a computer-against-computer battle shows (also in the menu).
 
 ## Scenarios
 
