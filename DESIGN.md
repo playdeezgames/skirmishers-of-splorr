@@ -222,6 +222,34 @@ next:
    61%). The warband has one (nine a side, 190 points).
 5. Sprites and sounds for the new types; scenarios with mixed bands.
 
+## Interface overhaul (November 7, 2026)
+
+The user's direction: the interface has grown "it works" clunky. Wanted:
+
+- **Menus** for starting a game (choose a scenario) and leaving one, instead
+  of buttons and hotkeys scattered over the panel.
+- **One control scheme:** up / down / left / right / OK / cancel, the same on
+  a gamepad (D-pad, A, B) and a keyboard (arrows or WASD, Space or Enter,
+  Esc). The mouse keeps working (pointing moves the cursor, a click is OK).
+- **Ending the turn is automatic by default:** when none of your units can do
+  anything more, the turn ends by itself. Requiring the End turn press stays
+  as an option.
+
+## Roadmap ideas (not decided in detail; November 7, 2026)
+
+The user's list of what the game still needs, to be planned one at a time:
+
+- **New races:** goblins, orcs, gnolls (each with its own roster).
+- **Mounted units.**
+- **Walls:** wooden walls and stone walls as map tiles.
+- **Water:** shallow water slows units down; deep water cannot be crossed.
+- **Watercraft** to carry units over deep water, perhaps fighting other boats
+  and attacking fortifications.
+- **Siege machinery.**
+- **A campaign:** a larger world map of battles, where the player raises
+  armies with money from taxes and tribute and goes to war with larger
+  enemies.
+
 ## Suggested order
 
 1. README and release-standard files. **Done November 5, 2026.**
@@ -231,4 +259,8 @@ next:
 5. Computer player improvements. **Done November 6, 2026.**
 6. Move animation; Anvil art and sound. **Done November 6, 2026.**
 7. Tap to inspect (check on a touch-size screen).
-8. Armour and more unit types (see that section).
+8. Armour and more unit types (see that section); parts 1-4 done November 6,
+   2026, part 5 (mixed-band scenarios) waits for the interface overhaul.
+9. Interface overhaul: menus, one control scheme for gamepad and keyboard,
+   automatic end of turn (see that section).
+10. Then the roadmap ideas, in an order still to agree.
