@@ -35,6 +35,8 @@ Menu_Id :: enum {
 	Unit,
 	Confirm,
 	Game_Over,
+	Custom, // set up a custom battle
+	Army, // buy units for one side's custom army
 }
 
 Action :: enum {
@@ -58,6 +60,17 @@ Action :: enum {
 	Yes,
 	No,
 	Look,
+	Open_Custom,
+	Forest, // the custom battle's settings (Left / Right step through them)
+	Road,
+	Hills,
+	Budget,
+	Watch,
+	Pick_Army, // arg: side
+	Build_Army, // arg: side
+	Buy, // arg: unit kind (Left sells)
+	Clear_Army,
+	Start_Custom,
 }
 
 Item :: struct {
@@ -65,6 +78,7 @@ Item :: struct {
 	action:  Action,
 	arg:     int,
 	enabled: bool,
+	value:   string, // drawn on the right (unit prices)
 }
 
 MAX_ITEMS :: 16
@@ -73,6 +87,7 @@ menu_depth := 0
 menu_sel: [Menu_Id]int
 menu_hover := -1 // item under the mouse
 confirm_for: Action // what Yes does on the Confirm menu (Restart or Quit)
+menu_dir := 1 // which way a setting steps: Left -1, Right or OK +1
 
 // ---------------------------------------------------------------- options
 
@@ -88,6 +103,69 @@ fast := false
 load_options :: proc() {
 	auto_end = load_option(i32(Option.Auto_End)) != 0 // -1 when never saved: on
 	fast = load_option(i32(Option.Speed)) == 1
+}
+
+// The custom battle last set up, kept in the browser too: keys from
+// CUSTOM_KEY on, the counts of each side's bought army from CUSTOM_COUNTS_KEY.
+custom := game.DEFAULT_CUSTOM
+building_side := 0 // whose army the Army menu buys
+CUSTOM_KEY :: 100
+CUSTOM_COUNTS_KEY :: 120 // + side * 16 + unit kind
+#assert(len(game.Unit_Kind) <= 16)
+
+save_custom :: proc() {
+	values := [7]int {
+		int(custom.forest), 1 if custom.road else 0, int(custom.hills), custom.budget,
+		1 if custom.watch else 0, custom.sides[0].choice, custom.sides[1].choice,
+	}
+	for v, i in values { save_option(i32(CUSTOM_KEY + i), i32(v)) }
+	for side in 0 ..< 2 {
+		for count, k in custom.sides[side].custom { save_option(i32(CUSTOM_COUNTS_KEY + side * 16 + int(k)), i32(count)) }
+	}
+}
+
+load_custom :: proc() {
+	saved :: proc(key, lo, hi: int, v: ^int) {
+		x := int(load_option(i32(key)))
+		if x >= lo && x <= hi { v^ = x } // -1 when never saved: keep the default
+	}
+	v := game.DEFAULT_CUSTOM
+	forest, road, hills, watch := int(v.forest), 1, int(v.hills), 0
+	saved(CUSTOM_KEY + 0, 0, len(game.Forest_Level) - 1, &forest)
+	saved(CUSTOM_KEY + 1, 0, 1, &road)
+	saved(CUSTOM_KEY + 2, 0, len(game.Hill_Level) - 1, &hills)
+	saved(CUSTOM_KEY + 3, 10, 1000, &v.budget)
+	saved(CUSTOM_KEY + 4, 0, 1, &watch)
+	for side in 0 ..< 2 {
+		saved(CUSTOM_KEY + 5 + side, 0, game.ARMY_CHOICES - 1, &v.sides[side].choice)
+		for &count, k in v.sides[side].custom { saved(CUSTOM_COUNTS_KEY + side * 16 + int(k), 0, game.MAX_ARMY, &count) }
+	}
+	v.forest = game.Forest_Level(forest)
+	v.road = road == 1
+	v.hills = game.Hill_Level(hills)
+	v.watch = watch == 1
+	custom = v
+}
+
+// One step through n settings, the way menu_dir says.
+cycle :: proc(v, n: int) -> int {
+	return (v + menu_dir + n) % n
+}
+
+side_name :: proc(side: int) -> string {
+	return "Red" if side == 0 else "Blue"
+}
+
+army_label :: proc(side: int) -> string {
+	s := &custom.sides[side]
+	switch s.choice {
+	case game.ARMY_CUSTOM:
+		return fmt.tprintf("bought (%d of %d points)", game.counts_points(s.custom), custom.budget)
+	case game.ARMY_RANDOM:
+		return fmt.tprintf("random (%d points)", custom.budget)
+	}
+	p := game.ARMY_PRESETS[s.choice]
+	return fmt.tprintf("%s (%d units, %d points)", p.name, len(p.kinds), game.preset_points(p))
 }
 
 // ---------------------------------------------------------------- the stack
@@ -140,17 +218,42 @@ menu_items :: proc(id: Menu_Id) -> []Item {
 	n := 0
 	add :: proc(n: ^int, label: string, action: Action, enabled := true, arg := 0) {
 		if n^ < MAX_ITEMS {
-			item_buf[n^] = {label, action, arg, enabled}
+			item_buf[n^] = {label, action, arg, enabled, ""}
 			n^ += 1
 		}
 	}
 	switch id {
+	case .Custom:
+		add(&n, fmt.tprintf("Forest: %s", game.FOREST_LEVELS[custom.forest].name), .Forest)
+		add(&n, fmt.tprintf("Road: %s", "yes" if custom.road else "no"), .Road)
+		add(&n, fmt.tprintf("Hills: %s", game.HILL_LEVELS[custom.hills].name), .Hills)
+		add(&n, fmt.tprintf("Sides: %s", "computer vs computer" if custom.watch else "you are Red, the computer Blue"), .Watch)
+		for side in 0 ..< 2 {
+			add(&n, fmt.tprintf("%s: %s", side_name(side), army_label(side)), .Pick_Army, arg = side)
+			if custom.sides[side].choice == game.ARMY_CUSTOM {
+				c := custom.sides[side].custom
+				what := "nothing yet" if game.counts_size(c) == 0 else fmt.tprintf("%d units", game.counts_size(c))
+				add(&n, fmt.tprintf("    Buy %s's units (%s)", side_name(side), what), .Build_Army, arg = side)
+			}
+		}
+		add(&n, fmt.tprintf("Points to buy or draw armies: %d", custom.budget), .Budget)
+		add(&n, "Start battle", .Start_Custom, enabled = game.custom_ready(&custom))
+		add(&n, "Back", .Back)
+	case .Army:
+		c := custom.sides[building_side].custom
+		for ut, k in game.UNIT_TYPES {
+			add(&n, ut.name, .Buy, arg = int(k))
+			item_buf[n - 1].value = fmt.tprintf("%d", c[k])
+		}
+		add(&n, "Clear", .Clear_Army, enabled = game.counts_size(c) > 0)
+		add(&n, "Done", .Back)
 	case .Title:
 		add(&n, "Play", .Open_Scenarios)
 		add(&n, "Options", .Open_Options)
 		add(&n, "How to play", .Open_Help)
 	case .Scenarios:
 		for sc, i in game.SCENARIOS { add(&n, sc.name, .Start, arg = i) }
+		add(&n, "Custom battle...", .Open_Custom)
 		add(&n, "Back", .Back)
 	case .Options:
 		add(&n, fmt.tprintf("End turn: %s", "automatic" if auto_end else "press End turn"), .Auto_End)
@@ -226,6 +329,39 @@ activate :: proc(it: Item) {
 		if confirm_for == .Restart { start_game(scenario) } else { go_title() }
 	case .No:
 		pop_menu()
+	case .Open_Custom:
+		push_menu(.Custom)
+	case .Forest:
+		custom.forest = game.Forest_Level(cycle(int(custom.forest), len(game.Forest_Level)))
+	case .Road:
+		custom.road = !custom.road
+	case .Hills:
+		custom.hills = game.Hill_Level(cycle(int(custom.hills), len(game.Hill_Level)))
+	case .Budget:
+		i := 0
+		for b, k in game.BUDGETS { if b == custom.budget { i = k } }
+		custom.budget = game.BUDGETS[cycle(i, len(game.BUDGETS))]
+	case .Watch:
+		custom.watch = !custom.watch
+	case .Pick_Army:
+		s := &custom.sides[it.arg]
+		s.choice = cycle(s.choice, game.ARMY_CHOICES)
+	case .Build_Army:
+		building_side = it.arg
+		push_menu(.Army)
+	case .Buy:
+		c := &custom.sides[building_side].custom
+		k := game.Unit_Kind(it.arg)
+		if menu_dir < 0 {
+			if c[k] > 0 { c[k] -= 1 }
+		} else if game.can_buy(&custom, building_side, k) {
+			c[k] += 1
+		}
+	case .Clear_Army:
+		custom.sides[building_side].custom = {}
+	case .Start_Custom:
+		menu_depth = 0
+		start_game(CUSTOM_SCENARIO)
 	case .Auto_End:
 		auto_end = !auto_end
 		save_option(i32(Option.Auto_End), 1 if auto_end else 0)
@@ -246,6 +382,9 @@ activate :: proc(it: Item) {
 		pop_menu()
 		chanting = true
 	}
+	#partial switch it.action {
+	case .Forest, .Road, .Hills, .Budget, .Watch, .Pick_Army, .Buy, .Clear_Army: save_custom()
+	}
 }
 
 menu_input :: proc(btn: Input) {
@@ -264,7 +403,10 @@ menu_input :: proc(btn: Input) {
 	case .Left, .Right:
 		// settings flip either way
 		#partial switch items[sel^].action {
-		case .Auto_End, .Sound, .Speed, .View: activate(items[sel^])
+		case .Auto_End, .Sound, .Speed, .View, .Forest, .Road, .Hills, .Budget, .Watch, .Pick_Army, .Buy:
+			menu_dir = -1 if btn == .Left else 1
+			activate(items[sel^])
+			menu_dir = 1
 		}
 	case .Ok:
 		activate(items[sel^])
@@ -273,7 +415,7 @@ menu_input :: proc(btn: Input) {
 		case .Title:     // nowhere to go back to
 		case .Confirm:   pop_menu()
 		case .Game_Over: pop_menu() // look at the map
-		case .Scenarios, .Options, .Help, .Pause, .Unit:
+		case .Scenarios, .Options, .Help, .Pause, .Unit, .Custom, .Army:
 			pop_menu()
 		}
 	}
@@ -427,7 +569,10 @@ menu_box :: proc(id: Menu_Id) -> (x, y, w, h: f32) {
 	w = MENU_W if id != .Help else 600
 	h = menu_items_top(id) + f32(extra) * 18 + f32(len(items)) * ITEM_H + 14
 	cx := f32(CANVAS_W) / 2 if on_title() else (PANEL_X - 12) / 2
-	if id == .Scenarios { w = 420 }
+	#partial switch id {
+	case .Scenarios, .Army: w = 420
+	case .Custom:           w = 480
+	}
 	x = cx - w / 2
 	y = max(16, f32(CANVAS_H) / 2 - h / 2 + (60 if on_title() && id == .Title else 0))
 	return
@@ -467,7 +612,11 @@ mouse_click :: proc "c" (x, y: f32) {
 	if menu_open() {
 		if i := menu_item_at(x, y); i >= 0 {
 			menu_sel[menu_top()] = i
-			activate(menu_items(menu_top())[i])
+			it := menu_items(menu_top())[i]
+			bx, _, bw, _ := menu_box(menu_top())
+			if it.action == .Buy && x >= sell_x(bx, bw) - 4 && x < sell_x(bx, bw) + 24 { menu_dir = -1 }
+			activate(it)
+			menu_dir = 1
 		} else if menu_top() == .Unit {
 			pop_menu() // a click away from the unit menu closes it
 		}
@@ -489,6 +638,10 @@ mouse_click :: proc "c" (x, y: f32) {
 
 // ---------------------------------------------------------------- drawing
 
+// The - and + boxes on an Army menu row.
+sell_x :: proc(x, w: f32) -> f32 { return x + w - 120 }
+buy_x :: proc(x, w: f32) -> f32 { return x + w - 52 }
+
 // Where a menu's text starts below its top edge (menus with a heading leave
 // room for it).
 menu_items_top :: proc(id: Menu_Id) -> f32 {
@@ -501,6 +654,7 @@ menu_text_lines :: proc(id: Menu_Id) -> int {
 	case .Confirm:   return 1
 	case .Game_Over: return 1
 	case .Help:      return len(HELP)
+	case .Army:      return 2
 	}
 	return 0
 }
@@ -545,10 +699,13 @@ draw_menus :: proc() {
 		.Unit      = "",
 		.Confirm   = "Restart this battle?" if confirm_for == .Restart else "Quit to the title screen?",
 		.Game_Over = "",
+		.Custom    = "Custom battle",
+		.Army      = "",
 	}
 	title := titles[id]
 	if id == .Unit && selected >= 0 { title = game.unit_type(&g.units[selected]).name }
 	if id == .Game_Over && g.winner >= 0 { title = fmt.tprintf("%s win!", g.factions[g.winner].name) }
+	if id == .Army { title = fmt.tprintf("%s's army", side_name(building_side)) }
 	tc := GOLD
 	if id == .Game_Over && g.winner >= 0 { tc = g.factions[g.winner].color }
 	text(title, x + w / 2, y + 28, 18, tc, 1)
@@ -562,7 +719,12 @@ draw_menus :: proc() {
 		text(msg, x + w / 2, ty + 6, 13, GREY, 1)
 	case .Help:
 		for line, i in HELP { text(line, x + 20, ty + 6 + f32(i) * 18, 12, WHITE) }
-	case .Title, .Scenarios, .Options, .Pause, .Unit:
+	case .Army:
+		c := custom.sides[building_side].custom
+		pts := game.counts_points(c)
+		text(fmt.tprintf("%d of %d points spent, %d left; %d of %d units", pts, custom.budget, custom.budget - pts, game.counts_size(c), game.MAX_ARMY), x + w / 2, ty + 6, 13, WHITE, 1)
+		text("Right or OK buys one, Left sells one", x + w / 2, ty + 24, 12, GREY, 1)
+	case .Title, .Scenarios, .Options, .Pause, .Unit, .Custom:
 	}
 	ty += f32(menu_text_lines(id)) * 18
 	items := menu_items(id)
@@ -574,7 +736,21 @@ draw_menus :: proc() {
 			text(">", x + 22, iy + (ITEM_H - 4) / 2, 14, GOLD, 0)
 		}
 		col := WHITE if it.enabled else Color{0.4, 0.4, 0.45}
-		text(it.label, x + 40, iy + (ITEM_H - 4) / 2, 14, col, 0)
+		mid := iy + (ITEM_H - 4) / 2
+		text(it.label, x + 40, mid, 14, col, 0)
+		if it.action == .Buy {
+			// price, then  - count +  (the mouse clicks - to sell)
+			k := game.Unit_Kind(it.arg)
+			price := game.UNIT_TYPES[k].points
+			afford := game.can_buy(&custom, building_side, k)
+			text(fmt.tprintf("%d pts", price), x + w - 140, mid, 13, GREY if afford else Color{0.5, 0.3, 0.3}, 2)
+			sx, px := sell_x(x, w), buy_x(x, w)
+			fill_rect(sx, iy + 3, 20, ITEM_H - 10, 0.2, 0.22, 0.3, 1)
+			fill_rect(px, iy + 3, 20, ITEM_H - 10, 0.2, 0.22, 0.3, 1)
+			text("-", sx + 10, mid, 14, WHITE, 1)
+			text("+", px + 10, mid, 14, WHITE if afford else Color{0.4, 0.4, 0.45}, 1)
+			text(it.value, (sx + 20 + px) / 2, mid, 14, GOLD, 1)
+		}
 	}
 	if on_title() {
 		text("Arrows / WASD / D-pad to choose, Space / Enter / A to pick, Esc / B to go back", f32(CANVAS_W) / 2, f32(CANVAS_H) - 18, 12, GREY, 1)

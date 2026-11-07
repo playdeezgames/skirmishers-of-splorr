@@ -245,6 +245,29 @@ gamepad and mouse; your first unit is selected when your turn starts, and the
 next after each action. Options (end turn, sound, computer speed) are kept in
 the browser. The old panel buttons and the N and [ ] keys are gone.
 
+## Custom battles (November 7, 2026)
+
+The user asked for a "custom" battle type: pick the ground and the armies.
+Built as **Play > Custom battle...**, a settings menu (Left / Right or OK step
+each setting):
+
+- **Forest:** none, light (12%), woods (25%), heavy (50%), dense (75%).
+- **Road:** yes or no.
+- **Hills:** flat, some hills (15%), hilly (35%).
+- **Sides:** you play Red against the computer, or computer vs computer.
+- **Each side's army:** a ready-made one (Patrol 44 points, Hunters 87,
+  Shield wall 134, Champion's guard 157, Warband 190, Horde 210), one bought
+  unit by unit, or a random one filled up to the budget.
+- **Points to buy or draw armies:** 100, 150, 200, 250 or 300 (for bought and
+  random armies; at most 30 units a side).
+
+Buying opens the side's army menu: every unit type with its price and count
+(Right or OK buys, Left sells; the mouse has - and + boxes). The battle cannot
+start with an empty bought army or one over the budget. The last setup is
+kept in the browser. Rules side: `src/game/custom.odin` (`Custom_Battle`,
+`new_custom_game`); armies stand in a block two columns in from each edge,
+shooters and the Wololo in the back column, and forest grows round them.
+
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
 The user's list of what the game still needs, to be planned one at a time:
@@ -272,5 +295,6 @@ The user's list of what the game still needs, to be planned one at a time:
 8. Armour and more unit types (see that section); parts 1-4 done November 6,
    2026, part 5 (mixed-band scenarios) waits for the interface overhaul.
 9. Interface overhaul: menus, one control scheme for gamepad and keyboard,
-   automatic end of turn (see that section).
-10. Then the roadmap ideas, in an order still to agree.
+   automatic end of turn (see that section). **Done November 7, 2026.**
+10. Custom battles (see that section). **Done November 7, 2026.**
+11. Then the roadmap ideas, in an order still to agree.

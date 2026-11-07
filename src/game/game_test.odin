@@ -1363,3 +1363,68 @@ test_wololo_games_finish :: proc(t: ^testing.T) {
 		testing.expectf(t, chants > 0, "seed %d: the Wololos never chanted", seed)
 	}
 }
+
+@(test)
+test_custom_battle :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	cb := DEFAULT_CUSTOM
+	cb.forest = .Heavy
+	cb.road = false
+	cb.hills = .Some
+	cb.sides[0].choice = ARMY_CUSTOM
+	cb.sides[0].custom[.Champion] = 2
+	cb.sides[0].custom[.Archer] = 3
+	cb.sides[1].choice = 0 // patrol
+	testing.expect(t, custom_ready(&cb))
+	new_custom_game(g, &cb, 7)
+	testing.expect_value(t, g.name, "Custom battle")
+	testing.expect_value(t, army_points(g, 0), 2 * 55 + 3 * 14)
+	testing.expect_value(t, army_points(g, 1), 44)
+	testing.expect_value(t, g.factions[0].controller, Controller.Human)
+	testing.expect_value(t, forest_count(g), ROWS * COLS * 50 / 100)
+	testing.expect_value(t, high_count(g), ROWS * COLS * 15 / 100)
+	roads := 0
+	for row in g.terrain { for tr in row { if tr == .Road { roads += 1 } } }
+	testing.expect_value(t, roads, 0)
+	for i in 0 ..< g.unit_count { testing.expect(t, g.terrain[g.units[i].pos.y][g.units[i].pos.x] != .Forest) }
+
+	cb.road = true
+	cb.watch = true
+	new_custom_game(g, &cb, 8)
+	testing.expect_value(t, g.factions[0].controller, Controller.Computer)
+	roads = 0
+	for row in g.terrain { for tr in row { if tr == .Road { roads += 1 } } }
+	testing.expect(t, roads >= COLS)
+}
+
+@(test)
+test_custom_budget :: proc(t: ^testing.T) {
+	cb := DEFAULT_CUSTOM
+	cb.budget = 100
+	cb.sides[0].choice = ARMY_CUSTOM
+	testing.expect(t, !side_ready(&cb, 0)) // nothing bought yet
+	cb.sides[0].custom[.Champion] = 1
+	testing.expect(t, can_buy(&cb, 0, .Heavy)) // 55 + 25
+	cb.sides[0].custom[.Heavy] = 1
+	testing.expect(t, !can_buy(&cb, 0, .Heavy)) // 80 + 25 > 100
+	testing.expect(t, can_buy(&cb, 0, .Scout)) // 80 + 11
+	testing.expect(t, side_ready(&cb, 0))
+	cb.budget = 50 // lowered after buying
+	testing.expect(t, !side_ready(&cb, 0))
+	testing.expect(t, !custom_ready(&cb))
+
+	// random armies use the budget up (less than the cheapest unit left) and fit it
+	r := Rng{3}
+	for budget in BUDGETS {
+		for _ in 0 ..< 50 {
+			buf: [MAX_ARMY]Unit_Kind
+			army := random_army(&r, budget, buf[:])
+			pts := 0
+			for k in army { pts += UNIT_TYPES[k].points }
+			testing.expect(t, pts <= budget && pts > budget - 10)
+		}
+	}
+	// every preset fits in one side's share of the map
+	for p in ARMY_PRESETS { testing.expect(t, len(p.kinds) <= MAX_ARMY) }
+}

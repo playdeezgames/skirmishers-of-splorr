@@ -23,15 +23,26 @@ RED :: [3]f32{0.85, 0.25, 0.2}
 BLUE :: [3]f32{0.2, 0.45, 0.9}
 
 new_game :: proc(g: ^Game, scenario: int, seed: u64) {
+	begin_game(g, SCENARIOS[scenario].name, seed)
+	SCENARIOS[scenario].setup(g)
+	finish_setup(g)
+}
+
+// What every new game starts from, whatever builds it.
+begin_game :: proc(g: ^Game, name: string, seed: u64) {
 	g^ = {}
+	g.name = name
 	g.winner = -1
 	g.turn = 1
 	g.rng = {seed}
-	g.fog = true // fog of war in every scenario
-	SCENARIOS[scenario].setup(g)
+	g.fog = true // fog of war in every battle
+}
+
+// After the map and units are in place: the first turn starts.
+finish_setup :: proc(g: ^Game) {
 	start_faction_turn(g)
 	update_vision(g, NO_FACTION)
-	add_log(g, "%s: turn 1", SCENARIOS[scenario].name)
+	add_log(g, "%s: turn 1", g.name)
 }
 
 // Mostly grass, with clumps of forest grown from random seeds.

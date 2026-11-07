@@ -396,6 +396,7 @@ push_event :: proc(g: ^Game, e: Event) {
 }
 
 Game :: struct {
+	name:          string, // the scenario's, or "Custom battle"
 	terrain:       [ROWS][COLS]Terrain,
 	high:          [ROWS][COLS]bool, // elevation: high ground (true) or low ground
 	units:         [MAX_UNITS]Unit,

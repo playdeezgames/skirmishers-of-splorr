@@ -122,6 +122,7 @@ MENU_BUTTON :: Button{PANEL_X + 292, 12, 84, 24} // for the mouse; Esc, B or Sta
 END_TURN_BUTTON :: Button{PANEL_X, 282, 120, 30} // only while you must end turns yourself (Options)
 AUTO_END_DELAY :: 0.5 // seconds to see your last action before the turn ends by itself
 BACKDROP_SCENARIO :: 1 // the computer battle behind the title screen
+CUSTOM_SCENARIO :: -1 // `scenario` for a custom battle (set up from `custom`)
 
 // With a Wololo selected, chant mode makes OK on a friend bless it instead of
 // selecting it (OK on an enemy in range always curses).
@@ -150,12 +151,14 @@ main :: proc() {
 	ctx = context
 	js.add_window_event_listener(.Key_Down, nil, on_key)
 	load_options()
+	load_custom()
 	go_title()
 }
 
 start_game :: proc(n: int) {
 	scenario = n
-	game.new_game(&g, n, u64(time.now()._nsec))
+	seed := u64(time.now()._nsec)
+	if n == CUSTOM_SCENARIO { game.new_custom_game(&g, &custom, seed) } else { game.new_game(&g, n, seed) }
 	selected = -1
 	chanting = false
 	cursor_on = false
@@ -485,7 +488,7 @@ draw_panel :: proc() {
 	x := PANEL_X
 	text("Skirmishers of SPLORR!!", x, 24, 20, GOLD)
 	if !on_title() { button(MENU_BUTTON, "Menu (Esc)", !menu_open()) }
-	text(game.SCENARIOS[scenario].name, x, 50, 13, GREY)
+	text(g.name, x, 50, 13, GREY)
 
 	f := &g.factions[g.current]
 	status: string
