@@ -36,7 +36,7 @@ The game starts on a title screen (Play, Options, How to play); Play lists the b
 
 ## Scenarios
 
-Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, on maps that are 25, 50 or 75 percent forest, and on maps with some hills or hilly ones. The Kobold Warband: nine a side with a champion, two heavies, a pike, a slinger, an archer, a crossbow, a scout and a Wololo. Two computer-against-computer battles: four against four, and twenty against twenty (15 kobolds and 5 slingers a side).
+Kobold Skirmish (four against four, two slingers each) on a lightly wooded map, on maps that are 25, 50 or 75 percent forest, and on maps with some hills or hilly ones. The Kobold Warband: nine a side with a champion, two heavies, a pike, a slinger, an archer, a crossbow, a scout and a Wololo. Two computer-against-computer battles: four against four, and twenty against twenty (15 kobolds and 5 slingers a side). Four mixed-band battles where unlike armies meet: Shield Wall vs Skirmishers, Champion's Guard vs the Horde, Ambush in the Woods (half the map forest) and Archers on the Heights (hilly).
 
 **Custom battle:** choose how much forest, whether there is a road, and how hilly the ground is; give each side a ready-made army, a random one, or one you buy unit by unit within a points budget; and play Red against the computer or watch the computer fight itself.
 

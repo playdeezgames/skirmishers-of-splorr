@@ -220,7 +220,23 @@ next:
    points. **Wololo 12 points**: about a kobold beside kobolds (1w4k vs 5k
    45%), worth more beside big units (1w2h2k vs 1k2h2k 55%, 1w1c3k vs 1c4k
    61%). The warband has one (nine a side, 190 points).
-5. Sprites and sounds for the new types; scenarios with mixed bands.
+5. Sprites and sounds for the new types; scenarios with mixed bands. **Done
+   November 7, 2026.** Sprites and sounds came with parts 1-4. Four
+   scenarios pit different bands against each other, Red (you) against Blue,
+   balanced with the simulator at `-inset 2` (computer vs computer, Red's win
+   rate first):
+   - Shield Wall vs Skirmishers: 2 heavies, 2 pikes, 2 crossbows, a Wololo
+     (134) vs 3 archers, a scout, 6 kobolds (113), light woods: 48% / 51%.
+   - Champion's Guard vs the Horde: champion, 2 heavies, a Wololo, 4 kobolds
+     (157) vs 12 kobolds, 3 slingers (156): 55% / 45%.
+   - Ambush in the Woods (50% forest): 4 archers, a scout, 6 kobolds (127) vs
+     2 heavies, a pike, 2 crossbows, a Wololo (114): 48% / 50%.
+   - Archers on the Heights (35% hills): 4 archers, 2 heavies (106) vs 2
+     heavies, 2 pikes, 2 crossbows, a Wololo, 2 kobolds (154): 55% / 44%.
+   Finding: terrain swings these matchups hard. Archers are cheap on open and
+   hilly ground (4a2h 106 points beat 2h2p2x1w 134 points 68% on 35% hills;
+   4a1r6k 127 beats it 66% on the usual map) and weak in forest (27% at 50%
+   forest). Their price (14) may want raising; not changed yet.
 
 ## Interface overhaul (November 7, 2026)
 
@@ -293,7 +309,7 @@ The user's list of what the game still needs, to be planned one at a time:
 6. Move animation; Anvil art and sound. **Done November 6, 2026.**
 7. Tap to inspect (check on a touch-size screen).
 8. Armour and more unit types (see that section); parts 1-4 done November 6,
-   2026, part 5 (mixed-band scenarios) waits for the interface overhaul.
+   2026, part 5 (mixed-band scenarios) November 7, 2026. **Done.**
 9. Interface overhaul: menus, one control scheme for gamepad and keyboard,
    automatic end of turn (see that section). **Done November 7, 2026.**
 10. Custom battles (see that section). **Done November 7, 2026.**

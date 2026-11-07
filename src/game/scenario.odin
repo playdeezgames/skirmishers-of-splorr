@@ -17,6 +17,10 @@ SCENARIOS := [?]Scenario {
 	{"Kobold Skirmish: some hills", setup_kobold_hills_15},
 	{"Kobold Skirmish: hilly", setup_kobold_hills_35},
 	{"Kobold Warband", setup_kobold_warband},
+	{"Shield Wall vs Skirmishers", setup_shield_wall},
+	{"Champion's Guard vs the Horde", setup_champions_guard},
+	{"Ambush in the Woods", setup_woods_ambush},
+	{"Archers on the Heights", setup_archer_heights},
 }
 
 RED :: [3]f32{0.85, 0.25, 0.2}
@@ -278,4 +282,59 @@ setup_kobold_warband :: proc(g: ^Game) {
 	kinds := [?]Unit_Kind{.Archer, .Heavy, .Pike, .Champion, .Wololo, .Scout, .Kobold_Slinger, .Heavy, .Crossbow}
 	place_block(g, red, kinds[:], true, 2)
 	place_block(g, blue, kinds[:], false, 2)
+}
+
+// Mixed bands: two different armies, Red (you) against Blue, balanced with
+// tools/sim.sh at -inset 2 (win rates in the comments are computer vs
+// computer, red first). `forest` < 0 means the usual light clumps; otherwise
+// that share of the map grows round the armies. Kinds are rear units first.
+setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_Kind) {
+	if forest < 0 {
+		generate_clumped_forest(g, 9, 3, 9)
+	} else {
+		for &row in g.terrain { for &t in row { t = .Grass } }
+	}
+	generate_road(g, Road_Direction(rng_int(&g.rng, len(Road_Direction))))
+	red := add_faction(g, "Red", .Human, RED)
+	blue := add_faction(g, "Blue", .Computer, BLUE)
+	place_block(g, red, red_kinds, true, 2)
+	place_block(g, blue, blue_kinds, false, 2)
+	if forest >= 0 { grow_forest_to(g, forest) }
+	grow_hills_to(g, hills)
+}
+
+// Heavies, pikes, crossbows and a Wololo (134 points) against archers, a scout
+// and a crowd of kobolds (113): 48% to 51%.
+setup_shield_wall :: proc(g: ^Game) {
+	red := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Crossbow}
+	blue := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Kobold, .Kobold}
+	setup_bands(g, -1, 0, red[:], blue[:])
+}
+
+// A champion, two heavies, a Wololo and four kobolds (157 points) against
+// twelve kobolds and three slingers (156): 55% to 45%.
+setup_champions_guard :: proc(g: ^Game) {
+	red := [?]Unit_Kind{.Kobold, .Heavy, .Kobold, .Wololo, .Champion, .Kobold, .Heavy, .Kobold}
+	blue := [?]Unit_Kind {
+		.Kobold_Slinger, .Kobold, .Kobold, .Kobold, .Kobold_Slinger, .Kobold, .Kobold, .Kobold, .Kobold_Slinger, .Kobold,
+		.Kobold, .Kobold, .Kobold, .Kobold, .Kobold,
+	}
+	setup_bands(g, -1, 0, red[:], blue[:])
+}
+
+// Half the map is forest, where bows see little: archers, a scout and kobolds
+// (127 points) against heavies, a pike, crossbows and a Wololo (114): 48% to 50%.
+setup_woods_ambush :: proc(g: ^Game) {
+	red := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Archer, .Kobold, .Kobold}
+	blue := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Heavy, .Crossbow}
+	setup_bands(g, 50, 0, red[:], blue[:])
+}
+
+// Hilly ground, where bows shoot half as far again from high ground: four
+// archers and two heavies (106 points) against a shield wall with two kobolds
+// (154): 55% to 44%.
+setup_archer_heights :: proc(g: ^Game) {
+	red := [?]Unit_Kind{.Archer, .Heavy, .Archer, .Archer, .Heavy, .Archer}
+	blue := [?]Unit_Kind{.Crossbow, .Kobold, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Kobold, .Crossbow}
+	setup_bands(g, -1, 35, red[:], blue[:])
 }

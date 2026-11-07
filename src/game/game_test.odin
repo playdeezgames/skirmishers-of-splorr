@@ -1167,7 +1167,8 @@ test_mixed_band_games_finish :: proc(t: ^testing.T) {
 @(test)
 test_warband_scenario :: proc(t: ^testing.T) {
 	g: Game
-	new_game(&g, len(SCENARIOS) - 1, 3)
+	testing.expect_value(t, SCENARIOS[8].name, "Kobold Warband")
+	new_game(&g, 8, 3)
 	testing.expect_value(t, army_points(&g, 0), 190)
 	testing.expect_value(t, army_points(&g, 1), 190)
 	testing.expect_value(t, living_units(&g, 0), 9)
@@ -1427,4 +1428,35 @@ test_custom_budget :: proc(t: ^testing.T) {
 	}
 	// every preset fits in one side's share of the map
 	for p in ARMY_PRESETS { testing.expect(t, len(p.kinds) <= MAX_ARMY) }
+}
+
+@(test)
+test_mixed_band_scenarios :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	Want :: struct {
+		name:      string,
+		red, blue: int, // points
+		forest:    int, // percent, or -1 for the usual clumps
+		hills:     int,
+	}
+	wants := [?]Want {
+		{"Shield Wall vs Skirmishers", 134, 113, -1, 0},
+		{"Champion's Guard vs the Horde", 157, 156, -1, 0},
+		{"Ambush in the Woods", 127, 114, 50, 0},
+		{"Archers on the Heights", 106, 154, -1, 35},
+	}
+	for w in wants {
+		idx := -1
+		for sc, i in SCENARIOS { if sc.name == w.name { idx = i } }
+		testing.expectf(t, idx >= 0, "no scenario %s", w.name)
+		if idx < 0 { continue }
+		new_game(g, idx, 11)
+		testing.expect_value(t, army_points(g, 0), w.red)
+		testing.expect_value(t, army_points(g, 1), w.blue)
+		testing.expect_value(t, g.factions[0].controller, Controller.Human)
+		testing.expect_value(t, high_count(g), ROWS * COLS * w.hills / 100)
+		if w.forest >= 0 { testing.expect_value(t, forest_count(g), ROWS * COLS * w.forest / 100) }
+		for i in 0 ..< g.unit_count { testing.expect(t, g.terrain[g.units[i].pos.y][g.units[i].pos.x] != .Forest) }
+	}
 }
