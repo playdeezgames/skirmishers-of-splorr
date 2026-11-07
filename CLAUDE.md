@@ -30,7 +30,7 @@ tools/shots.sh                  # assets/screenshots/ and assets/cover.png via h
 tools/ship.sh                   # itch.io zip; --push refuses until TARGET is set (no itch.io page yet). shippit.sh wraps it
 ```
 
-Release layout follows the vault's `Tech/Release standard.md`: `ITCH_DESCRIPTION.md`, `assets/cover.png` (630x500), `assets/screenshots/`, `devlog/YYYYMMDD/devlog.md`. `?steps=N` (with `?scenario=N`) plays N computer actions at load; `tools/shots.sh` uses it because headless Chrome's virtual time does not run the AI timer.
+Release layout follows the vault's `Tech/Release standard.md`: `ITCH_DESCRIPTION.md`, `assets/cover.png` (630x500), `assets/screenshots/`, `devlog/YYYYMMDD/devlog.md`. `?steps=N` (with `?scenario=N`) plays N computer actions at load, and `?watch=1` hands every side to the computer first (`debug_watch`, for pictures of human scenarios); `tools/shots.sh` uses it because headless Chrome's virtual time does not run the AI timer.
 
 **GitHub Pages** (live since November 5, 2026): https://playdeezgames.github.io/skirmishers-of-splorr/ is served from `docs/` on `main`. `docs/` is committed build output, so do not edit it by hand. To update the page, run `tools/pages.sh`, commit `docs/`, and push, but only when the user says push.
 

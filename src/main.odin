@@ -197,6 +197,14 @@ debug_ai_steps :: proc "c" (n: i32) {
 	anim_skip()
 }
 
+// QA hook for screenshots (?watch=1): the computer plays every side.
+@(export)
+debug_watch :: proc "c" () {
+	context = ctx
+	for i in 0 ..< g.faction_count { g.factions[i].controller = .Computer }
+	selected = -1
+}
+
 // The side whose view the map shows: the human player's, or in a game with no
 // human, the one picked with V (NO_FACTION shows everything).
 viewer :: proc() -> int {
