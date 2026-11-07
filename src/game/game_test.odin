@@ -1169,8 +1169,8 @@ test_warband_scenario :: proc(t: ^testing.T) {
 	g: Game
 	testing.expect_value(t, SCENARIOS[8].name, "Kobold Warband")
 	new_game(&g, 8, 3)
-	testing.expect_value(t, army_points(&g, 0), 198)
-	testing.expect_value(t, army_points(&g, 1), 198)
+	testing.expect_value(t, army_points(&g, 0), 204)
+	testing.expect_value(t, army_points(&g, 1), 204)
 	testing.expect_value(t, living_units(&g, 0), 9)
 }
 
@@ -1380,7 +1380,7 @@ test_custom_battle :: proc(t: ^testing.T) {
 	testing.expect(t, custom_ready(&cb))
 	new_custom_game(g, &cb, 7)
 	testing.expect_value(t, g.name, "Custom battle")
-	testing.expect_value(t, army_points(g, 0), 2 * 55 + 3 * 14)
+	testing.expect_value(t, army_points(g, 0), 2 * 55 + 3 * 20)
 	testing.expect_value(t, army_points(g, 1), 44)
 	testing.expect_value(t, g.factions[0].controller, Controller.Human)
 	testing.expect_value(t, forest_count(g), ROWS * COLS * 50 / 100)
@@ -1441,10 +1441,10 @@ test_mixed_band_scenarios :: proc(t: ^testing.T) {
 		hills:     int,
 	}
 	wants := [?]Want {
-		{"Shield Wall vs Skirmishers", 142, 123, -1, 0},
+		{"Shield Wall vs Skirmishers", 142, 141, -1, 0},
 		{"Champion's Guard vs the Horde", 165, 166, -1, 0},
-		{"Ambush in the Woods", 137, 122, 50, 0},
-		{"Archers on the Heights", 106, 162, -1, 35},
+		{"Ambush in the Woods", 161, 122, 50, 0},
+		{"Archers on the Heights", 130, 162, -1, 35},
 	}
 	for w in wants {
 		idx := -1

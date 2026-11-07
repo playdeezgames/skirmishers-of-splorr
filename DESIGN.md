@@ -272,8 +272,8 @@ each setting):
 - **Hills:** flat, some hills (15%), hilly (35%).
 - **Sides:** you play Red against the computer, or computer vs computer.
 - **Each side's army:** a ready-made one (Patrol 44 points, Hunters 87,
-  Shield wall 142, Champion's guard 165, Warband 198, Horde 210; prices as of
-  the Wololo's area chant), one bought
+  Shield wall 142, Champion's guard 165, Warband 204, Horde 210; prices as of
+  the archer's 20 points), one bought
   unit by unit, or a random one filled up to the budget.
 - **Points to buy or draw armies:** 100, 150, 200, 250 or 300 (for bought and
   random armies; at most 30 units a side).
@@ -304,6 +304,24 @@ mixed-band scenarios were re-balanced: Blue's skirmishers get a kobold (123),
 the horde a kobold (166), the woodland archers a kobold (137); the heights
 stay (Red 106 v Blue 162, 47% / 53%).
 
+## Archer price (November 7, 2026)
+
+The user asked for a better archer price. Their worth depends on what they
+face (simulator, 400 games each):
+
+- Plain kobolds: about 13-14 points (5a v 7k 53%, 8k 44%; 1c4a v 1c5k 54%).
+- Behind a heavy and pike screen: about 22 (2h2p4a v 2h2p4s4k 50%, v 2h2p8k
+  80%, v 2h2p12k 50%).
+- Slow heavies: far more (5a v 3h 92%, v 5h 86%): move 3 cannot close on
+  range 5.
+- Terrain: hills multiply them (5a v 7k 80% on 15% hills, 92% on 35%:
+  bow range 5 becomes 7 from high ground); forest halves them (28% at 50%).
+
+Set to **20 points** (from 14), close to the mixed-army value. A single price
+cannot cover hills or slow heavies; if those stay lopsided, the fix is in the
+rules, e.g. the high-ground range bonus as +1 hex instead of x1.5 for the bow,
+or heavies that can double-move. Not done; for the user to decide.
+
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
 The user's list of what the game still needs, to be planned one at a time:
@@ -318,6 +336,11 @@ The user's list of what the game still needs, to be planned one at a time:
 - **A campaign:** a larger world map of battles, where the player raises
   armies with money from taxes and tribute and goes to war with larger
   enemies.
+- **Veteran units:** units that gain some benefit from experience (added
+  November 7, 2026).
+- **Auto-resolve:** in a game with a human player, a way to hand the battle to
+  the computer to finish, switching straight to fast speed (added November 7,
+  2026).
 
 ## Suggested order
 

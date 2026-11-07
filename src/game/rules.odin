@@ -266,7 +266,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		defense = {.White = 1, .Red = 0, .Black = 0},
 		body = 1,
 		move = 4,
-		points = 14, // 4 beat 4 slingers 60%, lose to 5 42% (simulator, November 6, 2026)
+		points = 20, // was 14 (fair against kobolds: 5a v 7k 53%); in mixed armies 4a = 4s4k (2h2p4a v 2h2p4s4k 50%), and slow heavies cannot catch them (5a v 5h 86%) (simulator, November 7, 2026)
 		vision = 7,
 	},
 	.Crossbow = {

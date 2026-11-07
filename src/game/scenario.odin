@@ -270,7 +270,7 @@ setup_kobold_hills :: proc(g: ^Game, percent: int) {
 setup_kobold_hills_15 :: proc(g: ^Game) { setup_kobold_hills(g, 15) }
 setup_kobold_hills_35 :: proc(g: ^Game) { setup_kobold_hills(g, 35) }
 
-// Nine a side, 198 points each: a champion, two heavies, a pike, a slinger,
+// Nine a side, 204 points each: a champion, two heavies, a pike, a slinger,
 // an archer, a crossbow, a scout and a Wololo, on the usual light woods and
 // road.
 setup_kobold_warband :: proc(g: ^Game) {
@@ -304,7 +304,7 @@ setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_
 }
 
 // Heavies, pikes, crossbows and a Wololo (142 points) against archers, a scout
-// and a crowd of kobolds (123): 50% to 49%.
+// and a crowd of kobolds (141): 50% to 49%.
 setup_shield_wall :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Crossbow}
 	blue := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Kobold, .Kobold, .Kobold}
@@ -323,7 +323,8 @@ setup_champions_guard :: proc(g: ^Game) {
 }
 
 // Half the map is forest, where bows see little: archers, a scout and kobolds
-// (137 points) against heavies, a pike, crossbows and a Wololo (122): 51% to 48%.
+// (161 points) against heavies, a pike, crossbows and a Wololo (122): 51% to 48%.
+// The archers' points overstate them here: forest is where bows are weakest.
 setup_woods_ambush :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Archer, .Kobold, .Kobold, .Kobold}
 	blue := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Heavy, .Crossbow}
@@ -331,7 +332,7 @@ setup_woods_ambush :: proc(g: ^Game) {
 }
 
 // Hilly ground, where bows shoot half as far again from high ground: four
-// archers and two heavies (106 points) against a shield wall with two kobolds
+// archers and two heavies (130 points) against a shield wall with two kobolds
 // (162): 47% to 53%.
 setup_archer_heights :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Archer, .Heavy, .Archer, .Archer, .Heavy, .Archer}
