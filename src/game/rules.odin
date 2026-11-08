@@ -8,21 +8,55 @@ Terrain :: enum u8 {
 	Grass,
 	Forest,
 	Road,
+	Shallow, // shallow water: slow going
+	Deep, // deep water: nobody crosses it (a road over it is a bridge)
+	Wood_Wall, // a palisade
+	Stone_Wall,
 }
 
 TERRAIN_NAMES := [Terrain]string {
-	.Grass  = "Grass",
-	.Forest = "Forest",
-	.Road   = "Road",
+	.Grass      = "Grass",
+	.Forest     = "Forest",
+	.Road       = "Road",
+	.Shallow    = "Shallow water",
+	.Deep       = "Deep water",
+	.Wood_Wall  = "Wooden wall",
+	.Stone_Wall = "Stone wall",
+}
+
+// Deep water and walls cannot be entered. Walls also block sight, except to
+// a unit right next to them (it looks over), and give cover from shots to a
+// unit right behind them (see line_of_sight and wall_cover). Wooden and stone
+// walls play alike for now; siege machinery may tell them apart.
+TERRAIN_PASSABLE := [Terrain]bool {
+	.Grass      = true,
+	.Forest     = true,
+	.Road       = true,
+	.Shallow    = true,
+	.Deep       = false,
+	.Wood_Wall  = false,
+	.Stone_Wall = false,
+}
+
+is_wall :: proc(t: Terrain) -> bool {
+	return t == .Wood_Wall || t == .Stone_Wall
+}
+
+is_water :: proc(t: Terrain) -> bool {
+	return t == .Shallow || t == .Deep
 }
 
 // Movement points spent to enter a hex of this terrain. Moving from road to
 // road is cheaper still (ROAD_TO_ROAD_HALVES); leaving a road onto other terrain
 // costs that terrain's full amount.
 TERRAIN_MOVE_COST := [Terrain]int {
-	.Grass  = 1,
-	.Forest = 2,
-	.Road   = 1,
+	.Grass      = 1,
+	.Forest     = 2,
+	.Road       = 1,
+	.Shallow    = 2,
+	.Deep       = 0, // impassable (TERRAIN_PASSABLE)
+	.Wood_Wall  = 0,
+	.Stone_Wall = 0,
 }
 
 // Movement is counted in half points so a road step can cost 1/2.
@@ -458,6 +492,38 @@ terrain_at :: proc(g: ^Game, h: Hex) -> Terrain {
 	return g.terrain[h.y][h.x]
 }
 
+passable :: proc(g: ^Game, h: Hex) -> bool {
+	return TERRAIN_PASSABLE[g.terrain[h.y][h.x]]
+}
+
+// Steps from the nearest of `from` to every hex, walking over passable
+// terrain and ignoring units (UNREACHABLE where no walk gets there). The
+// sources themselves count even when impassable, so a walk can head for the
+// bank of a lake. On open ground it equals the hex distance.
+walk_distances :: proc(g: ^Game, from: []Hex) -> (d: [ROWS][COLS]i32) {
+	for &row in d { for &c in row { c = UNREACHABLE } }
+	queue: [ROWS * COLS]Hex
+	head, tail := 0, 0
+	for h in from {
+		if !in_bounds(h) || d[h.y][h.x] == 0 { continue }
+		d[h.y][h.x] = 0
+		queue[tail] = h
+		tail += 1
+	}
+	for head < tail {
+		h := queue[head]
+		head += 1
+		nbs, n := neighbours(h)
+		for nb in nbs[:n] {
+			if d[nb.y][nb.x] != UNREACHABLE || !passable(g, nb) { continue }
+			d[nb.y][nb.x] = d[h.y][h.x] + 1
+			queue[tail] = nb
+			tail += 1
+		}
+	}
+	return
+}
+
 // Index of the living unit on h, or -1.
 unit_at :: proc(g: ^Game, h: Hex) -> int {
 	for i in 0 ..< g.unit_count {
@@ -541,7 +607,7 @@ movement_costs :: proc(g: ^Game, unit: int, viewer := OWN_VIEW) -> (cost: [ROWS]
 		from_high := is_high(g, e.hex)
 		nbs, n := neighbours(e.hex)
 		for nb in nbs[:n] {
-			if blocked[nb.y][nb.x] { continue }
+			if blocked[nb.y][nb.x] || !passable(g, nb) { continue }
 			c := e.cost + step_cost(from, terrain_at(g, nb), from_high, is_high(g, nb))
 			old := cost[nb.y][nb.x]
 			if old == UNREACHABLE || c < old {
@@ -734,7 +800,9 @@ NO_FACTION :: -1
 
 // Line of sight between two hexes, as seen by `viewer` (a faction). For each hex
 // strictly between them:
-//   - an obstacle is forest, or a living unit of a faction other than the
+//   - an obstacle is forest, a wall (unless either end is right next to it:
+//     a unit at a wall looks over it, and can be seen over it), or a living
+//     unit of a faction other than the
 //     viewer's (the viewer's own side never blocks; with NO_FACTION only terrain
 //     counts);
 //   - when both ends are on low ground, high ground in between blocks, and so
@@ -755,7 +823,10 @@ line_of_sight :: proc(g: ^Game, a, b: Hex, viewer := NO_FACTION) -> bool {
 			high := is_high(g, h)
 			if high && !ends_high { return false } // a hill between two low hexes
 			if !high && ends_high { continue } // seen over from above
-			if terrain_at(g, h) == .Forest { return false }
+			t := terrain_at(g, h)
+			if t == .Forest { return false }
+			// a wall blocks, unless one end stands right next to it and looks over
+			if is_wall(t) && hex_distance(h, a) > 1 && hex_distance(h, b) > 1 { return false }
 			if viewer != NO_FACTION {
 				if o := unit_at(g, h); o >= 0 && g.units[o].faction != viewer { return false }
 			}
@@ -840,8 +911,25 @@ combat_advantage :: proc(g: ^Game, attacker, target: Hex, fortified: bool) -> (a
 	a_high := is_high(g, attacker)
 	t_high := is_high(g, target)
 	attack_adv = melee && a_high && !t_high
-	defence_adv = fortified || (melee && t_high && !a_high)
+	defence_adv = fortified || (melee && t_high && !a_high) || wall_cover(g, attacker, target)
 	return
+}
+
+// A shot at a unit right behind a wall: the line passes over a wall hex next
+// to the target, which then defends with advantage. A shooter on high ground
+// shooting over a low wall gets no such trouble (it sees over it).
+wall_cover :: proc(g: ^Game, attacker, target: Hex) -> bool {
+	if hex_distance(attacker, target) <= 1 { return false }
+	a_high := is_high(g, attacker)
+	for nudge in ([2]f64{1, -1}) {
+		line, n := hexes_between(attacker, target, nudge)
+		for h in line[:n] {
+			if !in_bounds(h) || !is_wall(terrain_at(g, h)) || hex_distance(h, target) != 1 { continue }
+			if a_high && !is_high(g, h) { continue }
+			return true
+		}
+	}
+	return false
 }
 
 // Attacking also ends the attacker's movement for the turn.
@@ -892,11 +980,11 @@ resolve_attack :: proc(g: ^Game, attacker, target: int, weapon: Weapon_Kind, fir
 	def_tag := ""
 	if res.defence_advantage {
 		held_high := hex_distance(a.pos, t.pos) == 1 && is_high(g, t.pos) && !is_high(g, a.pos)
-		switch {
-		case res.fortified && held_high: def_tag = " (fort, high)"
-		case res.fortified:              def_tag = " (fort)"
-		case:                            def_tag = " (high)"
-		}
+		tags := ""
+		if res.fortified { tags = "fort" }
+		if held_high { tags = "high" if tags == "" else fmt.tprintf("%s, high", tags) }
+		if wall_cover(g, a.pos, t.pos) { tags = "cover" if tags == "" else fmt.tprintf("%s, cover", tags) }
+		def_tag = fmt.tprintf(" (%s)", tags)
 	}
 	atk_tag := " (high)" if res.attack_advantage else ""
 	if res.attack_boon != .None { atk_tag = fmt.tprintf("%s (%s)", atk_tag, "blessed" if res.attack_boon == .Blessed else "cursed") }

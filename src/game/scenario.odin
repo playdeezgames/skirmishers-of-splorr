@@ -21,6 +21,8 @@ SCENARIOS := [?]Scenario {
 	{"Champion's Guard vs the Horde", setup_champions_guard},
 	{"Ambush in the Woods", setup_woods_ambush},
 	{"Archers on the Heights", setup_archer_heights},
+	{"River Crossing", setup_river_crossing},
+	{"Walled Farmsteads", setup_walled_farmsteads},
 }
 
 RED :: [3]f32{0.85, 0.25, 0.2}
@@ -119,7 +121,8 @@ high_count :: proc(g: ^Game) -> int {
 }
 
 // Raises clumps of high ground until `percent` of the map is high. Height is
-// separate from terrain, so hills can carry forest, road or units.
+// separate from terrain, so hills can carry forest, road, walls or units, but
+// never water.
 grow_hills_to :: proc(g: ^Game, percent: int) {
 	target := ROWS * COLS * percent / 100
 	count := high_count(g)
@@ -127,7 +130,7 @@ grow_hills_to :: proc(g: ^Game, percent: int) {
 		seed := Hex{-1, -1}
 		for _ in 0 ..< 1000 {
 			h := Hex{rng_int(&g.rng, COLS), rng_int(&g.rng, ROWS)}
-			if !is_high(g, h) { seed = h; break }
+			if !is_high(g, h) && !is_water(terrain_at(g, h)) { seed = h; break }
 		}
 		if seed.x < 0 { break }
 		cells: [16]Hex
@@ -139,7 +142,7 @@ grow_hills_to :: proc(g: ^Game, percent: int) {
 		for tries := 0; n < size && count < target && tries < 100; tries += 1 {
 			nbs, nn := neighbours(cells[rng_int(&g.rng, n)])
 			nb := nbs[rng_int(&g.rng, nn)]
-			if is_high(g, nb) { continue }
+			if is_high(g, nb) || is_water(terrain_at(g, nb)) { continue } // water lies low
 			g.high[nb.y][nb.x] = true
 			cells[n] = nb
 			n += 1
@@ -288,7 +291,7 @@ setup_kobold_warband :: proc(g: ^Game) {
 // tools/sim.sh at -inset 2 (win rates in the comments are computer vs
 // computer, red first). `forest` < 0 means the usual light clumps; otherwise
 // that share of the map grows round the armies. Kinds are rear units first.
-setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_Kind) {
+setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_Kind, water := Water_Level.None, walls := Wall_Level.None) {
 	if forest < 0 {
 		generate_clumped_forest(g, 9, 3, 9)
 	} else {
@@ -299,6 +302,9 @@ setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_
 	blue := add_faction(g, "Blue", .Computer, BLUE)
 	place_block(g, red, red_kinds, true, 2)
 	place_block(g, blue, blue_kinds, false, 2)
+	generate_water(g, water)
+	generate_walls(g, walls)
+	ensure_connected(g)
 	if forest >= 0 { grow_forest_to(g, forest) }
 	grow_hills_to(g, hills)
 }
@@ -338,4 +344,19 @@ setup_archer_heights :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Archer, .Heavy, .Archer, .Archer, .Heavy, .Archer}
 	blue := [?]Unit_Kind{.Crossbow, .Kobold, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Kobold, .Crossbow}
 	setup_bands(g, -1, 35, red[:], blue[:])
+}
+
+WARBAND := [?]Unit_Kind{.Archer, .Heavy, .Pike, .Champion, .Wololo, .Scout, .Kobold_Slinger, .Heavy, .Crossbow}
+
+// The warband against itself (204 points a side) with a deep river between
+// them, crossed only at two or three shallow fords (and by the road's bridge,
+// if it crosses): 51% to 47% (400 games, 9 unfinished).
+setup_river_crossing :: proc(g: ^Game) {
+	setup_bands(g, -1, 0, WARBAND[:], WARBAND[:], water = .River)
+}
+
+// The warband against itself among walled farmsteads and field walls, with a
+// stream across the middle: 52.5% to 46% (400 games).
+setup_walled_farmsteads :: proc(g: ^Game) {
+	setup_bands(g, -1, 0, WARBAND[:], WARBAND[:], water = .Stream, walls = .Many)
 }

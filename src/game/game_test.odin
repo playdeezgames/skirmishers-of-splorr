@@ -1522,3 +1522,132 @@ test_chant_curses_only_seen_enemies :: proc(t: ^testing.T) {
 	testing.expect_value(t, g.units[seen].boon, Boon.Cursed)
 	testing.expect_value(t, g.units[hidden].boon, Boon.None)
 }
+
+@(test)
+test_water_and_walls_block_movement :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	blank_game(g)
+	k := add_unit(g, .Kobold, 0, {5, 10})
+	g.terrain[10][6] = .Deep
+	g.terrain[10][4] = .Stone_Wall
+	g.terrain[9][5] = .Shallow
+	costs := movement_costs(g, k)
+	testing.expect_value(t, costs[10][6], UNREACHABLE)
+	testing.expect_value(t, costs[10][4], UNREACHABLE)
+	testing.expect_value(t, costs[9][5], 2 * HALVES_PER_POINT) // shallow water costs 2
+	// the hex beyond the deep water is reached the long way round
+	testing.expect(t, costs[10][7] > 2 * HALVES_PER_POINT)
+	testing.expect(t, !move_unit(g, k, {6, 10}))
+}
+
+@(test)
+test_wall_sight_and_cover :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	blank_game(g)
+	// a wall two hexes from each end blocks the line
+	g.terrain[10][8] = .Wood_Wall
+	testing.expect(t, !line_of_sight(g, {6, 10}, {10, 10}))
+	// right next to the wall, a unit looks over it, and is seen over it
+	testing.expect(t, line_of_sight(g, {7, 10}, {10, 10}))
+	testing.expect(t, line_of_sight(g, {6, 10}, {9, 10}))
+	// a shot at a unit right behind the wall: cover, which is defence advantage
+	testing.expect(t, wall_cover(g, {6, 10}, {9, 10}))
+	_, def := combat_advantage(g, {6, 10}, {9, 10}, false)
+	testing.expect(t, def)
+	// the unit behind the wall shooting out: its target has no cover
+	testing.expect(t, !wall_cover(g, {9, 10}, {6, 10}))
+	// shooting down from high ground over a low wall: no cover
+	g.high[10][6] = true
+	testing.expect(t, !wall_cover(g, {6, 10}, {9, 10}))
+	// deep water blocks nothing
+	g.high[10][6] = false
+	g.terrain[10][8] = .Deep
+	testing.expect(t, line_of_sight(g, {5, 10}, {11, 10}))
+
+	// cover is tagged in the log
+	blank_game(g)
+	g.terrain[10][8] = .Stone_Wall
+	a := add_unit(g, .Archer, 0, {5, 10})
+	add_unit(g, .Kobold, 1, {9, 10})
+	testing.expect(t, can_attack(g, a, 1))
+	attack(g, a, 1)
+	testing.expect(t, strings.contains(log_line(g, 0), "(cover)"))
+}
+
+@(test)
+test_walk_distances :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	blank_game(g)
+	from := [1]Hex{{3, 3}}
+	d := walk_distances(g, from[:])
+	for row in 0 ..< ROWS {
+		for col in 0 ..< COLS {
+			testing.expect_value(t, int(d[row][col]), hex_distance({3, 3}, {col, row}))
+		}
+	}
+	// a wall across the map, open at the bottom: the walk goes round it
+	for row in 0 ..< ROWS - 1 { g.terrain[row][8] = .Stone_Wall }
+	from[0] = {6, 0}
+	d = walk_distances(g, from[:])
+	testing.expect(t, int(d[0][10]) > hex_distance({6, 0}, {10, 0}) + 10)
+	testing.expect_value(t, d[0][8], UNREACHABLE)
+}
+
+@(test)
+test_custom_water_and_walls :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	cb := DEFAULT_CUSTOM
+	for water in Water_Level {
+		for walls in Wall_Level {
+			cb.water = water
+			cb.walls = walls
+			for seed in u64(1) ..= 5 {
+				new_custom_game(g, &cb, seed)
+				testing.expect(t, armies_connected(g), "every unit can reach every other")
+				deep, shallow, wall := 0, 0, 0
+				for row in 0 ..< ROWS {
+					for col in 0 ..< COLS {
+						tr := g.terrain[row][col]
+						if tr == .Deep { deep += 1 }
+						if tr == .Shallow { shallow += 1 }
+						if is_wall(tr) { wall += 1 }
+						if is_water(tr) { testing.expect(t, !g.high[row][col], "water lies low") }
+					}
+				}
+				for i in 0 ..< g.unit_count { testing.expect(t, passable(g, g.units[i].pos)) }
+				switch water {
+				case .None:   testing.expect_value(t, deep + shallow, 0)
+				case .Stream: testing.expect(t, deep == 0 && shallow >= ROWS - 4)
+				case .River:  testing.expect(t, deep >= ROWS && shallow >= 2)
+				case .Ponds:  testing.expect(t, deep > 0 && shallow > 0)
+				}
+				if walls == .None { testing.expect_value(t, wall, 0) } else { testing.expect(t, wall > 0) }
+			}
+		}
+	}
+}
+
+@(test)
+test_water_and_wall_scenarios :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	for name, i in SCENARIOS {
+		if name.name != "River Crossing" && name.name != "Walled Farmsteads" { continue }
+		new_game(g, i, 3)
+		testing.expect(t, armies_connected(g))
+		testing.expect_value(t, army_points(g, 0), 204)
+		testing.expect_value(t, army_points(g, 1), 204)
+		deep, wall := 0, 0
+		for row in g.terrain {
+			for tr in row {
+				if tr == .Deep { deep += 1 }
+				if is_wall(tr) { wall += 1 }
+			}
+		}
+		if name.name == "River Crossing" { testing.expect(t, deep >= ROWS) } else { testing.expect(t, wall > 0) }
+	}
+}

@@ -66,6 +66,8 @@ Action :: enum {
 	Forest, // the custom battle's settings (Left / Right step through them)
 	Road,
 	Hills,
+	Water,
+	Walls,
 	Budget,
 	Watch,
 	Pick_Army, // arg: side
@@ -116,9 +118,10 @@ CUSTOM_COUNTS_KEY :: 120 // + side * 16 + unit kind
 #assert(len(game.Unit_Kind) <= 16)
 
 save_custom :: proc() {
-	values := [7]int {
+	values := [9]int {
 		int(custom.forest), 1 if custom.road else 0, int(custom.hills), custom.budget,
 		1 if custom.watch else 0, custom.sides[0].choice, custom.sides[1].choice,
+		int(custom.water), int(custom.walls),
 	}
 	for v, i in values { save_option(i32(CUSTOM_KEY + i), i32(v)) }
 	for side in 0 ..< 2 {
@@ -133,6 +136,9 @@ load_custom :: proc() {
 	}
 	v := game.DEFAULT_CUSTOM
 	forest, road, hills, watch := int(v.forest), 1, int(v.hills), 0
+	water, walls := int(v.water), int(v.walls)
+	saved(CUSTOM_KEY + 7, 0, len(game.Water_Level) - 1, &water)
+	saved(CUSTOM_KEY + 8, 0, len(game.Wall_Level) - 1, &walls)
 	saved(CUSTOM_KEY + 0, 0, len(game.Forest_Level) - 1, &forest)
 	saved(CUSTOM_KEY + 1, 0, 1, &road)
 	saved(CUSTOM_KEY + 2, 0, len(game.Hill_Level) - 1, &hills)
@@ -145,6 +151,8 @@ load_custom :: proc() {
 	v.forest = game.Forest_Level(forest)
 	v.road = road == 1
 	v.hills = game.Hill_Level(hills)
+	v.water = game.Water_Level(water)
+	v.walls = game.Wall_Level(walls)
 	v.watch = watch == 1
 	custom = v
 }
@@ -229,6 +237,8 @@ menu_items :: proc(id: Menu_Id) -> []Item {
 		add(&n, fmt.tprintf("Forest: %s", game.FOREST_LEVELS[custom.forest].name), .Forest)
 		add(&n, fmt.tprintf("Road: %s", "yes" if custom.road else "no"), .Road)
 		add(&n, fmt.tprintf("Hills: %s", game.HILL_LEVELS[custom.hills].name), .Hills)
+		add(&n, fmt.tprintf("Water: %s", game.WATER_LEVELS[custom.water]), .Water)
+		add(&n, fmt.tprintf("Walls: %s", game.WALL_LEVELS[custom.walls]), .Walls)
 		add(&n, fmt.tprintf("Sides: %s", "computer vs computer" if custom.watch else "you are Red, the computer Blue"), .Watch)
 		for side in 0 ..< 2 {
 			add(&n, fmt.tprintf("%s: %s", side_name(side), army_label(side)), .Pick_Army, arg = side)
@@ -350,6 +360,10 @@ activate :: proc(it: Item) {
 		custom.road = !custom.road
 	case .Hills:
 		custom.hills = game.Hill_Level(cycle(int(custom.hills), len(game.Hill_Level)))
+	case .Water:
+		custom.water = game.Water_Level(cycle(int(custom.water), len(game.Water_Level)))
+	case .Walls:
+		custom.walls = game.Wall_Level(cycle(int(custom.walls), len(game.Wall_Level)))
 	case .Budget:
 		i := 0
 		for b, k in game.BUDGETS { if b == custom.budget { i = k } }
@@ -397,7 +411,7 @@ activate :: proc(it: Item) {
 		cursor_on = true
 	}
 	#partial switch it.action {
-	case .Forest, .Road, .Hills, .Budget, .Watch, .Pick_Army, .Buy, .Clear_Army: save_custom()
+	case .Forest, .Road, .Hills, .Water, .Walls, .Budget, .Watch, .Pick_Army, .Buy, .Clear_Army: save_custom()
 	}
 }
 
@@ -417,7 +431,7 @@ menu_input :: proc(btn: Input) {
 	case .Left, .Right:
 		// settings flip either way
 		#partial switch items[sel^].action {
-		case .Auto_End, .Sound, .Speed, .View, .Forest, .Road, .Hills, .Budget, .Watch, .Pick_Army, .Buy:
+		case .Auto_End, .Sound, .Speed, .View, .Forest, .Road, .Hills, .Water, .Walls, .Budget, .Watch, .Pick_Army, .Buy:
 			menu_dir = -1 if btn == .Left else 1
 			activate(items[sel^])
 			menu_dir = 1
@@ -750,6 +764,8 @@ HELP := [?]string {
 	"",
 	"Forest costs 2 and blocks shots; roads are quick; high ground helps in",
 	"melee and adds sling and bow range. You see only what your units see.",
+	"Shallow water costs 2; deep water and walls cannot be crossed. A wall",
+	"blocks shots unless a unit stands right at it, and gives that unit cover.",
 	"Armour adds defence dice; crossbows pierce it; pikes strike first.",
 	"A Wololo's chant blesses every friend, or curses every enemy, on a hex",
 	"and the six round it.",

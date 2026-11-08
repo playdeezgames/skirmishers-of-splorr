@@ -174,6 +174,10 @@ ROAD :: Color{0.72, 0.6, 0.4}
 WHITE :: Color{1, 1, 1}
 GREY :: Color{0.65, 0.65, 0.7}
 GOLD :: Color{1, 0.85, 0.3}
+SHALLOW :: Color{0.45, 0.66, 0.8}
+DEEP :: Color{0.15, 0.3, 0.58}
+WOOD :: Color{0.52, 0.35, 0.18}
+STONE :: Color{0.6, 0.6, 0.62}
 
 Button :: struct {
 	x, y, w, h: f32,
@@ -603,15 +607,20 @@ draw_map :: proc() {
 			t := game.terrain_at(&g, h)
 			fill: Color
 			switch t {
-			case .Grass:  fill = GRASS
-			case .Forest: fill = FOREST
-			case .Road:   fill = ROAD
+			case .Grass:      fill = GRASS
+			case .Forest:     fill = FOREST
+			case .Road:       fill = ROAD
+			case .Shallow:    fill = SHALLOW
+			case .Deep:       fill = DEEP
+			case .Wood_Wall, .Stone_Wall: fill = GRASS // the wall is drawn on top
 			}
 			high := game.is_high(&g, h)
 			if high { fill = fill * 0.7 + Color{0.95, 0.9, 0.7} * 0.3 } // high ground: paler, with a dark rim
 			draw_hex(p.x, p.y, HEX_R, fill.r, fill.g, fill.b, 1, 0, 0, 0, 0.25, 1)
 			if high { draw_hex(p.x, p.y, HEX_R - 1.5, 0, 0, 0, 0, 0.35, 0.27, 0.15, 0.8, 1.5) }
 			if t == .Forest { blit(i32(Sprite.Trees), p.x, p.y, 2) }
+			if game.is_water(t) { draw_waves(p, t == .Deep) }
+			if game.is_wall(t) { draw_wall(p, t == .Stone_Wall) }
 			if !game.hex_in_view(&g, view, h) {
 				// explored but out of sight now: dimmed
 				draw_hex(p.x, p.y, HEX_R, 0.05, 0.05, 0.08, 0.5, 0, 0, 0, 0, 0)
@@ -693,6 +702,51 @@ draw_map :: proc() {
 	if cursor_on && !menu_open() {
 		p := hex_centre(cursor)
 		draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, GOLD.r, GOLD.g, GOLD.b, 0.95, 2.5)
+	}
+}
+
+// Two little wave marks on a water hex.
+draw_waves :: proc(p: [2]f32, deep: bool) {
+	c := Color{0.75, 0.88, 0.95} if !deep else Color{0.4, 0.55, 0.8}
+	for dy in ([2]f32{-4, 5}) {
+		x := p.x - 6 + (dy > 0 ? 3 : -2)
+		draw_line(x, p.y + dy, x + 4, p.y + dy - 2, c.r, c.g, c.b, 1.5)
+		draw_line(x + 4, p.y + dy - 2, x + 8, p.y + dy, c.r, c.g, c.b, 1.5)
+	}
+}
+
+// A wall hex: a palisade of stakes, or courses of stone.
+draw_wall :: proc(p: [2]f32, stone: bool) {
+	w, h := HEX_R * 1.3, HEX_R * 1.1
+	x0, y0 := p.x - w / 2, p.y - h / 2
+	if stone {
+		fill_rect(x0, y0, w, h, STONE.r, STONE.g, STONE.b, 1)
+		dark := STONE * 0.6
+		for i in 1 ..< 4 {
+			y := y0 + h * f32(i) / 4
+			draw_line(x0, y, x0 + w, y, dark.r, dark.g, dark.b, 1)
+		}
+		for i in 0 ..< 4 {
+			// joints, staggered course by course
+			off := w / 4 if i % 2 == 0 else w / 2
+			y := y0 + h * f32(i) / 4
+			draw_line(x0 + off, y, x0 + off, y + h / 4, dark.r, dark.g, dark.b, 1)
+			draw_line(x0 + off + w / 2, y, x0 + off + w / 2, y + h / 4, dark.r, dark.g, dark.b, 1)
+		}
+		draw_line(x0, y0, x0 + w, y0, 0.85, 0.85, 0.88, 1.5)
+	} else {
+		stakes :: 5
+		sw := w / stakes
+		dark := WOOD * 0.6
+		for i in 0 ..< stakes {
+			x := x0 + f32(i) * sw
+			fill_rect(x + 0.5, y0 + 2, sw - 1, h - 2, WOOD.r, WOOD.g, WOOD.b, 1)
+			// a pointed top
+			draw_line(x + 0.5, y0 + 2, x + sw / 2, y0 - 1, WOOD.r, WOOD.g, WOOD.b, 2)
+			draw_line(x + sw / 2, y0 - 1, x + sw - 0.5, y0 + 2, WOOD.r, WOOD.g, WOOD.b, 2)
+			draw_line(x + sw - 0.5, y0 + 2, x + sw - 0.5, y0 + h, dark.r, dark.g, dark.b, 1)
+		}
+		draw_line(x0, y0 + h * 0.65, x0 + w, y0 + h * 0.65, dark.r, dark.g, dark.b, 1.5) // the rail
 	}
 }
 
@@ -859,6 +913,7 @@ draw_hex_info :: proc(x, y: f32, view: int) {
 	t := game.terrain_at(&g, h)
 	cost := fmt.tprintf("move cost %d", game.TERRAIN_MOVE_COST[t])
 	if t == .Road { cost = fmt.tprintf("%s, %s from road", cost, points_text(game.step_cost(.Road, .Road, false, false))) }
+	if !game.TERRAIN_PASSABLE[t] { cost = "no entry, cover" if game.is_wall(t) else "no entry" }
 	text(fmt.tprintf("Hex %d,%d: %s%s (%s)", h.x, h.y, game.is_high(&g, h) ? "high " : "", game.TERRAIN_NAMES[t], cost), x, y, 13, GREY)
 	if hu := game.unit_at(&g, h); hu >= 0 && game.unit_visible(&g, hu, view) {
 		u := &g.units[hu]

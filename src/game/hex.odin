@@ -50,6 +50,13 @@ neighbours :: proc(h: Hex) -> (out: [6]Hex, n: int) {
 	return
 }
 
+// The neighbour in one direction (0 east, 1 north-east, 2 north-west, 3 west,
+// 4 south-west, 5 south-east), which may be off the map.
+neighbour_dir :: proc(h: Hex, dir: int) -> Hex {
+	offsets := &ODD_ROW_NEIGHBOURS if h.y & 1 == 1 else &EVEN_ROW_NEIGHBOURS
+	return h + offsets[dir]
+}
+
 SQRT3 :: 1.7320508075688772
 
 // Centre of a hex in pixels, for hexes of the given radius (centre to corner),

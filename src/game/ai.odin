@@ -74,6 +74,18 @@ Ai_View :: struct {
 	self_pos:    Hex,
 	pikes:       [MAX_UNITS]Hex, // enemy pikes in sight that have not struck first this turn
 	pike_count:  int,
+	// walking steps (walk_distances) to what the unit heads for: the nearest
+	// spot, else the scout's goal (for the scout) or the scout (the others).
+	// Deep water and walls make this longer than the hex distance.
+	walk:        [ROWS][COLS]i32,
+}
+
+// Steps to walk from h to what the unit heads for (see Ai_View.walk).
+FAR :: 999
+
+walk_to :: proc(v: ^Ai_View, h: Hex) -> int {
+	d := v.walk[h.y][h.x]
+	return FAR if d == UNREACHABLE else int(d)
 }
 
 SCOUT_LEAD :: 2
@@ -99,7 +111,10 @@ ai_view :: proc(g: ^Game, unit: int) -> (v: Ai_View) {
 			v.spot_count += 1
 		}
 	}
-	if v.spot_count > 0 { return }
+	if v.spot_count > 0 {
+		v.walk = walk_distances(g, v.spots[:v.spot_count])
+		return
+	}
 	// nobody known: the unit that sees furthest scouts (lowest index on a tie)
 	scout := -1
 	for i in 0 ..< g.unit_count {
@@ -135,6 +150,8 @@ ai_view :: proc(g: ^Game, unit: int) -> (v: Ai_View) {
 		}
 		if best < max(int) { break }
 	}
+	target := [1]Hex{v.goal if v.is_scout else v.scout_pos}
+	v.walk = walk_distances(g, target[:])
 	return
 }
 
@@ -201,13 +218,11 @@ ai_hex_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: ^Ai_V
 				for p in view.friends[:view.friend_count] { nearest = min(nearest, hex_distance(h, p)) }
 				lag = max(0, nearest - SCOUT_LEASH)
 			}
-			return 2 + hex_distance(h, view.goal) + lag * 2
+			return 2 + walk_to(view, h) + lag * 2
 		}
-		return 2 + abs(hex_distance(h, view.scout_pos) - SCOUT_LEAD)
+		return 2 + abs(walk_to(view, h) - SCOUT_LEAD)
 	}
-	nearest := max(int)
-	for p in view.spots[:view.spot_count] { nearest = min(nearest, hex_distance(h, p)) }
-	return 2 + nearest
+	return 2 + walk_to(view, h)
 }
 
 // True if some enemy the unit's side can see could, on its next turn, move
@@ -411,6 +426,11 @@ ai_tactical_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: 
 	if !unsafe { bonus += 4 }
 	if is_high(g, h) { bonus += 2 }
 	if terrain_at(g, h) == .Forest { bonus += 1 }
+	// right behind a wall: cover from shots
+	nbs, n := neighbours(h)
+	for nb in nbs[:n] {
+		if is_wall(terrain_at(g, nb)) { bonus += 1; break }
+	}
 	return {what, -bonus}
 }
 
@@ -568,11 +588,10 @@ ai_chanter_unit :: proc(g: ^Game, unit: int) {
 		approach := 0
 		if value == 0 {
 			if view.spot_count == 0 {
-				approach = hex_distance(h, view.scout_pos) // follow the scout
+				// follow the scout (a Wololo that is the scout itself stays put)
+				approach = hex_distance(h, view.self_pos) if view.is_scout else walk_to(view, h)
 			} else {
-				nearest := max(int)
-				for p in view.spots[:view.spot_count] { nearest = min(nearest, hex_distance(h, p)) }
-				approach = abs(nearest - CHANT_RANGE)
+				approach = abs(walk_to(view, h) - CHANT_RANGE)
 			}
 		}
 		return {-value * 4 + unsafe * 40 + approach, 0}

@@ -358,14 +358,61 @@ design.** Holding high ground with bows is meant to pay off; it will matter
 more in a campaign of several battles, where choosing (or being denied) the
 ground is part of the war. Keep the x1.5 range rule and the 20-point price.
 
+## Walls and water (November 8, 2026)
+
+The user asked for walls and water from the roadmap list. Their exact rules
+were not specified; these are Claude's defaults, easy to change:
+
+- **Shallow water** costs 2 to enter (like forest) but blocks no view and
+  hides nobody. **Deep water** cannot be entered and blocks no view (you can
+  shoot across a river). A road over water is a bridge. Water is never high
+  ground.
+- **Wooden and stone walls** are map tiles that cannot be entered. A wall
+  blocks line of sight and shots like forest, except when either end is
+  right next to it: a unit at a wall looks and shoots over it, and can be
+  seen and shot over it. Seen from high ground, low walls block nothing, as
+  with low forest.
+- **Cover:** a shot across a wall hex right next to the target (on either
+  traced line) lets the target defend with advantage, logged "(cover)".
+  Not from high ground over a low wall. Advantage never stacks (fortified,
+  holding high ground, cover). Melee never crosses a wall (the wall hex is
+  between).
+- Wooden and stone walls play the same for now; siege machinery is where
+  they will differ (wood can be burned or broken more easily).
+- **Maps:** water and walls are laid after the road and the armies (never on
+  either; the road becomes a bridge or a gate) and before forest and hills.
+  Water: a stream (one shallow hex wide), a river (two deep hexes wide with
+  two or three shallow fords, one per third of the map) running north-south
+  through the middle columns, each row's hex touching the last so there is
+  no gap, or two or three ponds (deep, ringed by shallows). Walls: "some"
+  is one walled farmstead (a ring of 12 wall hexes round a yard, with two
+  gates opposite each other) and two field walls (3 to 6 hexes, sometimes
+  bending), "many" is two farmsteads and five field walls; each is wooden
+  or stone at random. If anything is shut in, walls and then deep water give
+  way until every unit can walk to every other (`ensure_connected`).
+- **Computer player:** it measures how far it is from what it heads for by
+  walking distance (round water and walls), not as the crow flies, so it
+  finds fords and gates; on open maps this is the same as before. It likes
+  hexes next to a wall (cover) a little, as it likes forest.
+- **Custom battles** gain Water (none, a stream, a river with fords, ponds)
+  and Walls (none, some, many). **Scenarios:** River Crossing (the warband
+  against itself across a river: 51% to 47% over 400 games) and Walled
+  Farmsteads (many walls and a stream: 52.5% to 46%). Battles take a few more
+  turns (about 20 to 23 instead of 14); unfinished games stay rare (6 to 9
+  in 400).
+- Drawn without new sprites for now: water in two blues with wave marks,
+  stone walls as grey courses of stone, palisades as brown pointed stakes.
+
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
 The user's list of what the game still needs, to be planned one at a time:
 
 - **New races:** goblins, orcs, gnolls (each with its own roster).
 - **Mounted units.**
-- **Walls:** wooden walls and stone walls as map tiles.
+- **Walls:** wooden walls and stone walls as map tiles. **Built November 8,
+  2026** (see Walls and water).
 - **Water:** shallow water slows units down; deep water cannot be crossed.
+  **Built November 8, 2026.**
 - **Watercraft** to carry units over deep water, perhaps fighting other boats
   and attacking fortifications.
 - **Siege machinery.**

@@ -78,6 +78,8 @@ Custom_Battle :: struct {
 	forest: Forest_Level,
 	road:   bool,
 	hills:  Hill_Level,
+	water:  Water_Level,
+	walls:  Wall_Level,
 	budget: int, // for custom and random armies
 	watch:  bool, // computer vs computer (else you play Red)
 	sides:  [2]Side_Setup,
@@ -191,7 +193,11 @@ new_custom_game :: proc(g: ^Game, cb: ^Custom_Battle, seed: u64) {
 	buf: [MAX_ARMY]Unit_Kind
 	place_block(g, red, side_army(g, cb, 0, buf[:]), true, 2)
 	place_block(g, blue, side_army(g, cb, 1, buf[:]), false, 2)
-	// forest after the road and units, so it grows round them
+	// water and walls after the road and units, so they go round them
+	generate_water(g, cb.water)
+	generate_walls(g, cb.walls)
+	ensure_connected(g)
+	// forest after the rest, so it grows round them
 	grow_forest_to(g, FOREST_LEVELS[cb.forest].percent)
 	grow_hills_to(g, HILL_LEVELS[cb.hills].percent)
 	finish_setup(g)

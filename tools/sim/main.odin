@@ -23,6 +23,8 @@ options:
   -forest P   make P percent of the map forest (0-90); default: the standard
               light clumps (about 10-15%)
   -hills P    raise P percent of the map as high ground (0-90; default 0)
+  -water W    none (default), stream, river (deep, with fords) or ponds
+  -walls W    none (default), some or many (walled farmsteads, field walls)
   -red S      computer style for red: tactical (default) or basic (the
               first computer player, kept for comparison)
   -blue S     the same for blue
@@ -88,7 +90,12 @@ Totals :: struct {
 	fortifies:    [2]int,
 }
 
-play :: proc(red, blue: ^Army, first, inset, forest, hills: int, fog: bool, styles: [2]game.Ai_Style, seed: u64, t: ^Totals) {
+Ground :: struct {
+	water: game.Water_Level,
+	walls: game.Wall_Level,
+}
+
+play :: proc(red, blue: ^Army, first, inset, forest, hills: int, ground: Ground, fog: bool, styles: [2]game.Ai_Style, seed: u64, t: ^Totals) {
 	g: game.Game
 	g.winner = -1
 	g.turn = 1
@@ -102,6 +109,9 @@ play :: proc(red, blue: ^Army, first, inset, forest, hills: int, fog: bool, styl
 	game.add_faction(&g, "Blue", .Computer, game.BLUE, styles[1])
 	game.place_block(&g, 0, red.kinds[:red.count], true, inset)
 	game.place_block(&g, 1, blue.kinds[:blue.count], false, inset)
+	game.generate_water(&g, ground.water)
+	game.generate_walls(&g, ground.walls)
+	game.ensure_connected(&g)
 	if forest >= 0 { game.grow_forest_to(&g, forest) }
 	if hills > 0 { game.grow_hills_to(&g, hills) }
 	g.current = first
@@ -153,6 +163,7 @@ main :: proc() {
 	first_mode := "alt"
 	fog := true
 	styles: [2]game.Ai_Style
+	ground: Ground
 	for i := 0; i < len(args); i += 1 {
 		a := args[i]
 		if a == "-nofog" {
@@ -172,6 +183,16 @@ main :: proc() {
 			case "-hills":
 				hills, ok = strconv.parse_int(v)
 				ok = ok && hills >= 0 && hills <= 90
+			case "-water":
+				ok = false
+				for name, w in ([game.Water_Level]string{.None = "none", .Stream = "stream", .River = "river", .Ponds = "ponds"}) {
+					if v == name { ground.water, ok = w, true }
+				}
+			case "-walls":
+				ok = false
+				for name, w in ([game.Wall_Level]string{.None = "none", .Some = "some", .Many = "many"}) {
+					if v == name { ground.walls, ok = w, true }
+				}
 			case "-red", "-blue":
 				st, sok := parse_style(v)
 				ok = sok
@@ -196,7 +217,7 @@ main :: proc() {
 		case "blue": first = 1
 		case "alt":  first = i % 2
 		}
-		play(&red, &blue, first, inset, forest, hills, fog, styles, u64(seed + i), &t)
+		play(&red, &blue, first, inset, forest, hills, ground, fog, styles, u64(seed + i), &t)
 	}
 
 	decided := t.wins[0] + t.wins[1]
@@ -206,8 +227,9 @@ main :: proc() {
 		for k in a.kinds[:a.count] { n += game.UNIT_TYPES[k].points }
 		return n
 	}
-	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s, hills %d%%, fog %s",
-		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text, hills, "on" if fog else "off")
+	fmt.printfln("%s (red, %d points) vs %s (blue, %d points): %d games, first move %s, inset %d, forest %s, hills %d%%, water %s, walls %s, fog %s",
+		positional[0], points(&red), positional[1], points(&blue), games, first_mode, inset, forest_text, hills,
+		game.WATER_LEVELS[ground.water], game.WALL_LEVELS[ground.walls], "on" if fog else "off")
 	fmt.printfln("  styles: red %v, blue %v", styles[0], styles[1])
 	fmt.printfln("  red wins  %5.1f%%   avg survivors %.1f of %d", pct(t.wins[0], games), f64(t.survivors[0]) / f64(max(t.wins[0], 1)), red.count)
 	fmt.printfln("  blue wins %5.1f%%   avg survivors %.1f of %d", pct(t.wins[1], games), f64(t.survivors[1]) / f64(max(t.wins[1], 1)), blue.count)
