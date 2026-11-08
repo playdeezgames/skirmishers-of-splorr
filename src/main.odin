@@ -54,6 +54,7 @@ Sprite :: enum i32 {
 	Crossbow,
 	Pike,
 	Wololo,
+	Sapper,
 }
 
 UNIT_SPRITES := [game.Unit_Kind]Sprite {
@@ -66,6 +67,7 @@ UNIT_SPRITES := [game.Unit_Kind]Sprite {
 	.Crossbow       = .Crossbow,
 	.Pike           = .Pike,
 	.Wololo         = .Wololo,
+	.Sapper         = .Sapper,
 }
 
 BLESS_COLOR :: Color{1, 0.85, 0.3}
@@ -97,6 +99,7 @@ WEAPON_SOUNDS := [game.Weapon_Kind]Sound {
 	.Bow      = .Bow,
 	.Crossbow = .Crossbow,
 	.Pike     = .Stab,
+	.Pick     = .Stab,
 }
 
 play :: proc(s: Sound) {
@@ -612,7 +615,7 @@ draw_map :: proc() {
 			case .Road:       fill = ROAD
 			case .Shallow:    fill = SHALLOW
 			case .Deep:       fill = DEEP
-			case .Wood_Wall, .Stone_Wall: fill = GRASS // the wall is drawn on top
+			case .Wood_Wall, .Stone_Wall, .Cracked_Wall, .Rubble: fill = GRASS // drawn on top
 			}
 			high := game.is_high(&g, h)
 			if high { fill = fill * 0.7 + Color{0.95, 0.9, 0.7} * 0.3 } // high ground: paler, with a dark rim
@@ -620,7 +623,12 @@ draw_map :: proc() {
 			if high { draw_hex(p.x, p.y, HEX_R - 1.5, 0, 0, 0, 0, 0.35, 0.27, 0.15, 0.8, 1.5) }
 			if t == .Forest { blit(i32(Sprite.Trees), p.x, p.y, 2) }
 			if game.is_water(t) { draw_waves(p, t == .Deep) }
-			if game.is_wall(t) { draw_wall(p, t == .Stone_Wall) }
+			if game.is_wall(t) { draw_wall(p, t != .Wood_Wall, t == .Cracked_Wall) }
+			if t == .Rubble { draw_rubble(p) }
+			// walls the selected sapper can break (orange)
+			if selected >= 0 && !anim_busy() && game.can_demolish(&g, selected, h) {
+				draw_hex(p.x, p.y, HEX_R - 1, 0, 0, 0, 0, 1, 0.6, 0.15, 1, 3)
+			}
 			if !game.hex_in_view(&g, view, h) {
 				// explored but out of sight now: dimmed
 				draw_hex(p.x, p.y, HEX_R, 0.05, 0.05, 0.08, 0.5, 0, 0, 0, 0, 0)
@@ -716,7 +724,7 @@ draw_waves :: proc(p: [2]f32, deep: bool) {
 }
 
 // A wall hex: a palisade of stakes, or courses of stone.
-draw_wall :: proc(p: [2]f32, stone: bool) {
+draw_wall :: proc(p: [2]f32, stone, cracked: bool) {
 	w, h := HEX_R * 1.3, HEX_R * 1.1
 	x0, y0 := p.x - w / 2, p.y - h / 2
 	if stone {
@@ -734,6 +742,13 @@ draw_wall :: proc(p: [2]f32, stone: bool) {
 			draw_line(x0 + off + w / 2, y, x0 + off + w / 2, y + h / 4, dark.r, dark.g, dark.b, 1)
 		}
 		draw_line(x0, y0, x0 + w, y0, 0.85, 0.85, 0.88, 1.5)
+		if cracked {
+			// a dark zigzag down the stones
+			c := Color{0.15, 0.13, 0.12}
+			draw_line(p.x - 2, y0, p.x + 2, p.y - 2, c.r, c.g, c.b, 2)
+			draw_line(p.x + 2, p.y - 2, p.x - 3, p.y + 3, c.r, c.g, c.b, 2)
+			draw_line(p.x - 3, p.y + 3, p.x + 1, y0 + h, c.r, c.g, c.b, 2)
+		}
 	} else {
 		stakes :: 5
 		sw := w / stakes
@@ -747,6 +762,19 @@ draw_wall :: proc(p: [2]f32, stone: bool) {
 			draw_line(x + sw - 0.5, y0 + 2, x + sw - 0.5, y0 + h, dark.r, dark.g, dark.b, 1)
 		}
 		draw_line(x0, y0 + h * 0.65, x0 + w, y0 + h * 0.65, dark.r, dark.g, dark.b, 1.5) // the rail
+	}
+}
+
+// What a sapper leaves of a wall: a scatter of stones.
+draw_rubble :: proc(p: [2]f32) {
+	// x, y, size; every other one a splinter of wood
+	stones := [?][3]f32{{-8, -5, 6}, {3, -7, 5}, {8, 1, 6}, {-3, 3, 7}, {-10, 5, 5}, {5, 8, 5}, {0, -2, 4}}
+	for st, i in stones {
+		c := STONE * 0.75 if i % 2 == 0 else WOOD * 0.9
+		x, y := p.x + st.x - st.z / 2, p.y + st.y - st.z / 2
+		fill_rect(x - 1, y - 1, st.z + 2, st.z * 0.8 + 2, 0.15, 0.13, 0.1, 1)
+		fill_rect(x, y, st.z, st.z * 0.8, c.r, c.g, c.b, 1)
+		fill_rect(x, y, st.z, 1, min(c.r * 1.4, 1), min(c.g * 1.4, 1), min(c.b * 1.4, 1), 1)
 	}
 }
 
@@ -860,6 +888,8 @@ control_hint :: proc() -> string {
 		return "OK: bless friends on and round the cursor   Cancel: stop"
 	case chant_mode == .Curse:
 		return "OK: curse foes on and round the cursor   Cancel: stop"
+	case selected >= 0 && game.can_demolish_anywhere(&g, selected):
+		return "OK: move/attack/break wall   OK on it: more"
 	case selected >= 0:
 		return "OK: move/attack   OK on it: more   Cancel: drop"
 	}
@@ -885,8 +915,13 @@ draw_unit_card :: proc(i: int, x, y: f32) {
 		text(fmt.tprintf("chant: bless or curse a hex and round it, range %d", game.CHANT_RANGE), x, wy, 13, GREY)
 		wy += 16
 	}
+	if ut.sapper {
+		text("breaks a wall next to it (stone: two blows)", x, wy, 13, GREY)
+		wy += 16
+	}
 	if i != selected || u.faction != g.current { return }
 	state := "may chant" if ut.chants else "may attack"
+	if ut.sapper { state = "may attack or break a wall" }
 	if ut.chants && chant_mode == .Bless { state = "chant mode: bless (C switches to curse)" }
 	if ut.chants && chant_mode == .Curse { state = "chant mode: curse (C stops)" }
 	if u.boon != .None { state = fmt.tprintf("%s; %s", state, "blessed" if u.boon == .Blessed else "cursed") }

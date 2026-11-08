@@ -540,6 +540,10 @@ play_ok :: proc() {
 			select_next_unit()
 			return
 		}
+		if game.demolish(&g, selected, h) { // a sapper breaks the wall; this ends its move
+			select_next_unit()
+			return
+		}
 		if game.move_unit(&g, selected, h) { return }
 	}
 	selected = -1
@@ -766,6 +770,7 @@ HELP := [?]string {
 	"melee and adds sling and bow range. You see only what your units see.",
 	"Shallow water costs 2; deep water and walls cannot be crossed. A wall",
 	"blocks shots unless a unit stands right at it, and gives that unit cover.",
+	"A sapper breaks a wall next to it instead of attacking (stone takes two).",
 	"Armour adds defence dice; crossbows pierce it; pikes strike first.",
 	"A Wololo's chant blesses every friend, or curses every enemy, on a hex",
 	"and the six round it.",

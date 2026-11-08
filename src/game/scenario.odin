@@ -355,8 +355,11 @@ setup_river_crossing :: proc(g: ^Game) {
 	setup_bands(g, -1, 0, WARBAND[:], WARBAND[:], water = .River)
 }
 
-// The warband against itself among walled farmsteads and field walls, with a
-// stream across the middle: 52.5% to 46% (400 games).
+// The warband and a sapper against the same (216 points a side) among
+// walled farmsteads and field walls, with a stream across the middle:
+// 47.5% to 52% (400 games; the computer strikes about 0.1 walls a game).
+WARBAND_SAPPER := [?]Unit_Kind{.Archer, .Heavy, .Pike, .Champion, .Wololo, .Scout, .Kobold_Slinger, .Sapper, .Heavy, .Crossbow}
+
 setup_walled_farmsteads :: proc(g: ^Game) {
-	setup_bands(g, -1, 0, WARBAND[:], WARBAND[:], water = .Stream, walls = .Many)
+	setup_bands(g, -1, 0, WARBAND_SAPPER[:], WARBAND_SAPPER[:], water = .Stream, walls = .Many)
 }

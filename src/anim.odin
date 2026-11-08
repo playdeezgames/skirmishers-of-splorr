@@ -55,6 +55,8 @@ anim_duration :: proc(ev: ^game.Event, view: int) -> f64 {
 		}
 	case .Fortify:
 		if own || anim_sees(view, ev.from) { return 0.2 }
+	case .Demolish:
+		if own || anim_sees(view, ev.from) || anim_sees(view, ev.target_pos) { return STRIKE_TIME + FLASH_TIME }
 	case .Chant:
 		if own || anim_sees(view, ev.from) || anim_sees(view, ev.target_pos) { return CHANT_TIME }
 		for i in 0 ..< g.unit_count {
@@ -92,6 +94,7 @@ anim_update :: proc(dt: f64) {
 		case .Attack:  play(WEAPON_SOUNDS[ev.result.weapon])
 		case .Fortify: play(.Fortify)
 		case .Chant:   play(.Chant)
+		case .Demolish: play(.Stab)
 		}
 	}
 }
@@ -139,6 +142,12 @@ anim_unit :: proc(i: int, view: int) -> (pos: [2]f32, alpha: f32, show, moved: b
 			fade := 1 - max(0, t - STRIKE_TIME) / FLASH_TIME
 			return hex_centre(ev.target_pos), fade, fade > 0, true
 		}
+	case .Demolish:
+		if ev.unit == i && t < STRIKE_TIME {
+			// the sapper swings at the wall
+			lunge := math.sin(t / STRIKE_TIME * math.PI) * 0.35
+			return lerp2(hex_centre(ev.from), hex_centre(ev.target_pos), lunge), 1, true, true
+		}
 	case .Fortify, .Chant:
 	}
 	return
@@ -163,6 +172,21 @@ draw_anim_effects :: proc() {
 		}
 		draw_hex(b.x, b.y, HEX_R * (1.2 + f * 1.4), 0, 0, 0, 0, col.r, col.g, col.b, 1, 3)
 		text("blessed!" if ev.bless else "cursed!", b.x, b.y - HEX_R * 2 - 4 - f * 8, 13, col, 1)
+		set_alpha(1)
+		return
+	}
+	if anim.active && anim.ev.kind == .Demolish && anim.t >= STRIKE_TIME {
+		// a puff of dust over the wall
+		ev := &anim.ev
+		f := f32((anim.t - STRIKE_TIME) / FLASH_TIME)
+		b := hex_centre(ev.target_pos)
+		set_alpha(1 - f)
+		for k in 0 ..< 6 {
+			a := f32(k) * math.PI / 3 + 0.4
+			r := HEX_R * (0.3 + f * 0.8)
+			draw_circle(b.x + math.cos(a) * r, b.y + math.sin(a) * r * 0.7, 3 + f * 4, 0.7, 0.62, 0.5, 0, 0, 0, 0)
+		}
+		text("rubble!" if ev.rubble else "cracked", b.x, b.y - HEX_R - 4 - f * 8, 13, Color{0.95, 0.85, 0.6}, 1)
 		set_alpha(1)
 		return
 	}

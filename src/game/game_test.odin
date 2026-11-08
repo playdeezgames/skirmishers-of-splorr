@@ -1639,8 +1639,9 @@ test_water_and_wall_scenarios :: proc(t: ^testing.T) {
 		if name.name != "River Crossing" && name.name != "Walled Farmsteads" { continue }
 		new_game(g, i, 3)
 		testing.expect(t, armies_connected(g))
-		testing.expect_value(t, army_points(g, 0), 204)
-		testing.expect_value(t, army_points(g, 1), 204)
+		pts := 204 if name.name == "River Crossing" else 204 + SAPPER_POINTS
+		testing.expect_value(t, army_points(g, 0), pts)
+		testing.expect_value(t, army_points(g, 1), pts)
 		deep, wall := 0, 0
 		for row in g.terrain {
 			for tr in row {
@@ -1650,4 +1651,75 @@ test_water_and_wall_scenarios :: proc(t: ^testing.T) {
 		}
 		if name.name == "River Crossing" { testing.expect(t, deep >= ROWS) } else { testing.expect(t, wall > 0) }
 	}
+}
+
+@(test)
+test_sapper_demolish :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	blank_game(g)
+	s := add_unit(g, .Sapper, 0, {5, 10})
+	k := add_unit(g, .Kobold, 0, {3, 10})
+	add_unit(g, .Kobold, 1, {15, 2}) // so the game is not over
+	start_faction_turn(g)
+	g.terrain[10][6] = .Wood_Wall
+	g.terrain[10][4] = .Stone_Wall
+	g.terrain[10][8] = .Stone_Wall
+	testing.expect(t, !can_demolish(g, s, {8, 10}), "not next to it")
+	testing.expect(t, !can_demolish(g, k, {4, 10}), "only sappers")
+	testing.expect(t, !can_demolish(g, s, {5, 9}), "not a wall")
+	testing.expect(t, can_demolish_anywhere(g, s))
+	// a wooden wall falls at once, and that is the sapper's turn
+	testing.expect(t, demolish(g, s, {6, 10}))
+	testing.expect_value(t, g.terrain[10][6], Terrain.Rubble)
+	testing.expect(t, unit_finished(g, s))
+	testing.expect(t, !demolish(g, s, {4, 10}), "one wall a turn")
+	testing.expect(t, strings.contains(log_line(g, 0), "breaks the wooden wall"))
+	// rubble: passable at 2, blocks no sight
+	testing.expect(t, passable(g, {6, 10}))
+	g.terrain[2][6] = .Rubble
+	testing.expect(t, line_of_sight(g, {3, 2}, {9, 2}), "rubble blocks no sight")
+	// a stone wall takes two blows, on two turns
+	g.units[s].attacked, g.units[s].done = false, false
+	g.units[s].moves_left = 0
+	testing.expect(t, !unit_finished(g, s), "a wall to break is still something to do")
+	testing.expect(t, demolish(g, s, {4, 10}))
+	testing.expect_value(t, g.terrain[10][4], Terrain.Cracked_Wall)
+	testing.expect(t, !passable(g, {4, 10}))
+	testing.expect(t, strings.contains(log_line(g, 0), "cracks the stone wall"))
+	g.units[s].attacked, g.units[s].done = false, false
+	testing.expect(t, demolish(g, s, {4, 10}))
+	testing.expect_value(t, g.terrain[10][4], Terrain.Rubble)
+	costs := movement_costs(g, k)
+	testing.expect_value(t, costs[10][4], 2 * HALVES_PER_POINT)
+}
+
+@(test)
+test_ai_sapper_breaches :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	blank_game(g)
+	g.factions[0].controller = .Computer
+	// a wall the length of the map but for one gap at the bottom
+	for row in 0 ..< ROWS - 1 { g.terrain[row][10] = .Wood_Wall }
+	s := add_unit(g, .Sapper, 0, {9, 5})
+	add_unit(g, .Kobold, 1, {13, 5})
+	start_faction_turn(g)
+	update_vision(g, NO_FACTION)
+	ai_tactical_unit(g, s)
+	broken := 0
+	for row in 0 ..< ROWS - 1 { if g.terrain[row][10] == .Rubble { broken += 1 } }
+	testing.expect_value(t, broken, 1)
+	// with the gap right beside it, it walks instead
+	blank_game(g)
+	g.factions[0].controller = .Computer
+	for row in 0 ..< 6 { g.terrain[row][10] = .Wood_Wall }
+	s = add_unit(g, .Sapper, 0, {9, 5})
+	add_unit(g, .Kobold, 1, {13, 5})
+	start_faction_turn(g)
+	update_vision(g, NO_FACTION)
+	ai_tactical_unit(g, s)
+	broken = 0
+	for row in 0 ..< 6 { if g.terrain[row][10] == .Rubble { broken += 1 } }
+	testing.expect_value(t, broken, 0)
 }

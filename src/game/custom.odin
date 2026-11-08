@@ -95,7 +95,7 @@ DEFAULT_CUSTOM :: Custom_Battle {
 
 // Rear units first when a bought army is laid out (shooters and the Wololo in
 // the back column once there is more than one).
-REAR_ORDER := [?]Unit_Kind{.Archer, .Crossbow, .Kobold_Slinger, .Wololo, .Scout, .Kobold, .Pike, .Heavy, .Champion}
+REAR_ORDER := [?]Unit_Kind{.Archer, .Crossbow, .Kobold_Slinger, .Wololo, .Scout, .Sapper, .Kobold, .Pike, .Heavy, .Champion}
 #assert(len(REAR_ORDER) == len(Unit_Kind))
 
 preset_points :: proc(p: Army_Preset) -> int {

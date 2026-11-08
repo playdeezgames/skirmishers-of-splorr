@@ -403,6 +403,39 @@ were not specified; these are Claude's defaults, easy to change:
 - Drawn without new sprites for now: water in two blues with wave marks,
   stone walls as grey courses of stone, palisades as brown pointed stakes.
 
+## Sappers (November 8, 2026)
+
+Watching Walled Farmsteads, the user saw the need for an engineer or sapper
+that turns walls into rubble. Claude's defaults, easy to change:
+
+- **Kobold Sapper:** fights like a kobold (a pick: 1 white die, range 1),
+  defends with 1 white, body 1, move 4, sight 5, 12 points. Its own sprite
+  (an iron cap and a pick). Letter `e` in `tools/sim.sh`.
+- **Breaking a wall** instead of attacking, on a wall hex next to it: a
+  wooden wall (or a cracked stone wall) becomes **rubble**; a stone wall
+  first **cracks** (still a wall in every way) and falls to a second blow on a
+  later turn. This is where wooden and stone walls finally differ. Like an
+  attack it ends the sapper's move; it can move first. On the page, walls it
+  can break get an orange ring and OK on one breaks it; the log says
+  "Red Sapper breaks the wooden wall into rubble" / "cracks the stone wall",
+  with a swing and a puff of dust.
+- **Rubble** costs 2 to enter (like forest and shallow water), blocks no
+  sight and gives no cover. The view cache and the computer's reach maps are
+  cleared when a wall falls (the map changed).
+- **Computer:** a sapper with nobody to strike breaks the wall next to it
+  that is worth most: the steps going through would save on its walk (round
+  the wall otherwise), plus 3 for each enemy in sight sheltering right behind
+  it; stone counts half (two blows); at least 3 to bother. It likes ending
+  its move where such a breach is open.
+- **Price:** in the simulator a sapper is worth exactly a kobold (1e9k v 10k
+  49% open, 51% among many walls, 47.5% with walls and a stream; warband +
+  sapper v warband + kobold 49-50%): the computer strikes only about 0.1
+  walls a game, since farmsteads have gates and field walls are short.
+  Priced at 12 for what a player can do with it that the computer hardly
+  does (opening a farmstead's far side, taking cover away from shooters).
+- **Walled Farmsteads** now gives each warband a sapper (216 points a side:
+  47.5% to 52% over 400 games).
+
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
 The user's list of what the game still needs, to be planned one at a time:
@@ -421,6 +454,8 @@ The user's list of what the game still needs, to be planned one at a time:
   enemies.
 - **Veteran units:** units that gain some benefit from experience (added
   November 7, 2026).
+- **Morale** (added November 8, 2026): units that can waver, rout or rally,
+  not decided in detail.
 - **Auto-resolve:** in a game with a human player, a way to hand the battle to
   the computer to finish, switching straight to fast speed (added November 7,
   2026). **Built November 8, 2026:** "Let the computer

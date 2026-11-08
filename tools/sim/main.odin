@@ -14,7 +14,8 @@ USAGE :: `usage: tools/sim.sh RED BLUE [options]
               h = heavy kobold (axe, chain), c = kobold champion (sword,
               plate), r = kobold scout (runner), a = kobold archer (bow),
               x = kobold crossbow (pierces armour), p = kobold pike (strikes
-              first), w = kobold wololo (blesses and curses); e.g. 4k, 2k2s
+              first), w = kobold wololo (blesses and curses), e = kobold
+              sapper (engineer: breaks walls); e.g. 4k, 2k2s
 options:
   -n GAMES    games to play (default 500)
   -first W    who moves first: red, blue or alt (default alt: half each)
@@ -45,7 +46,7 @@ parse_army :: proc(spec: string) -> (army: Army, ok: bool) {
 		switch c {
 		case '0' ..= '9':
 			n = n * 10 + int(c - '0')
-		case 'k', 's', 'h', 'c', 'r', 'a', 'x', 'p', 'w':
+		case 'k', 's', 'h', 'c', 'r', 'a', 'x', 'p', 'w', 'e':
 			if n == 0 { return }
 			kind: game.Unit_Kind
 			switch c {
@@ -58,6 +59,7 @@ parse_army :: proc(spec: string) -> (army: Army, ok: bool) {
 			case 'x': kind = .Crossbow
 			case 'p': kind = .Pike
 			case 'w': kind = .Wololo
+			case 'e': kind = .Sapper
 			}
 			counts[kind] += n
 			n = 0
@@ -67,7 +69,7 @@ parse_army :: proc(spec: string) -> (army: Army, ok: bool) {
 	}
 	if n != 0 { return }
 	// rear units first: ranged, then the rest, the toughest in front
-	for kind in ([]game.Unit_Kind{.Wololo, .Archer, .Crossbow, .Kobold_Slinger, .Scout, .Kobold, .Champion, .Pike, .Heavy}) {
+	for kind in ([]game.Unit_Kind{.Wololo, .Archer, .Crossbow, .Kobold_Slinger, .Scout, .Sapper, .Kobold, .Champion, .Pike, .Heavy}) {
 		for _ in 0 ..< counts[kind] {
 			if army.count >= len(army.kinds) { return }
 			army.kinds[army.count] = kind
@@ -88,6 +90,7 @@ Totals :: struct {
 	attacks:      [2][game.Weapon_Kind]int,
 	kills:        [2][game.Weapon_Kind]int,
 	fortifies:    [2]int,
+	demolished:   [2]int,
 }
 
 Ground :: struct {
@@ -147,6 +150,7 @@ play :: proc(red, blue: ^Army, first, inset, forest, hills: int, ground: Ground,
 	}
 	for f in 0 ..< 2 {
 		t.fortifies[f] += g.fortifies[f]
+		t.demolished[f] += g.demolished[f]
 		for w in game.Weapon_Kind {
 			t.attacks[f][w] += g.attacks[f][w]
 			t.kills[f][w] += g.kills[f][w]
@@ -239,6 +243,9 @@ main :: proc() {
 		pct(t.first_attack[0], decided), pct(t.first_attack[1], decided),
 		pct(t.first_blood[0], decided), pct(t.first_blood[1], decided), pct(t.blood_won, decided))
 	fmt.printfln("  fortifies per game: red %.2f, blue %.2f", f64(t.fortifies[0]) / f64(max(decided, 1)), f64(t.fortifies[1]) / f64(max(decided, 1)))
+	if t.demolished[0] + t.demolished[1] > 0 {
+		fmt.printfln("  walls struck per game: red %.2f, blue %.2f", f64(t.demolished[0]) / f64(max(decided, 1)), f64(t.demolished[1]) / f64(max(decided, 1)))
+	}
 	for f in 0 ..< 2 {
 		name := "red " if f == 0 else "blue"
 		for w in game.Weapon_Kind {

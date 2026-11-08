@@ -431,6 +431,10 @@ ai_tactical_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: 
 	for nb in nbs[:n] {
 		if is_wall(terrain_at(g, nb)) { bonus += 1; break }
 	}
+	// a sapper likes standing where a breach would shorten the way
+	if ut.sapper && what >= 2 {
+		if _, v := ai_breach(g, -1, h, view); v >= BREACH_MIN { bonus += 3 }
+	}
 	return {what, -bonus}
 }
 
@@ -473,8 +477,49 @@ ai_tactical_unit :: proc(g: ^Game, unit: int) {
 			return
 		}
 	}
+	// a sapper with nobody to strike from here breaks a wall in its way first
+	if ut.sapper && ai_tactical_target(g, unit) < 0 {
+		if w, v := ai_breach(g, unit, u.pos, &view); v >= BREACH_MIN && demolish(g, unit, w) { return }
+	}
 	if best != u.pos { move_unit(g, unit, best) }
-	if t := ai_tactical_target(g, unit); t >= 0 { attack(g, unit, t) }
+	if !u.alive { return }
+	if t := ai_tactical_target(g, unit); t >= 0 {
+		attack(g, unit, t)
+	} else if ut.sapper {
+		if w, v := ai_breach(g, unit, u.pos, &view); v >= BREACH_MIN { demolish(g, unit, w) }
+	}
+}
+
+// Steps of walking a breach must save to be worth a sapper's action.
+BREACH_MIN :: 3
+
+// The wall next to `from` most worth breaking: the steps going through it
+// would save on the way to what the unit heads for (walking round it
+// otherwise), plus BREACH_COVER for each enemy in sight right behind it (it
+// loses its cover). A stone wall takes two blows, so it counts half.
+BREACH_COVER :: 3
+
+ai_breach :: proc(g: ^Game, unit: int, from: Hex, view: ^Ai_View) -> (wall: Hex, value: int) {
+	here := walk_to(view, from)
+	nbs, n := neighbours(from)
+	for w in nbs[:n] {
+		t := terrain_at(g, w)
+		if !is_wall(t) { continue }
+		beyond := FAR
+		wnbs, wn := neighbours(w)
+		for b in wnbs[:wn] {
+			if passable(g, b) { beyond = min(beyond, walk_to(view, b)) }
+		}
+		saved := 0 if beyond >= FAR else here - (2 + beyond)
+		for e in view.enemies[:view.enemy_count] {
+			if hex_distance(g.units[e].pos, w) == 1 { saved = max(saved, 0) + BREACH_COVER }
+		}
+		if t == .Stone_Wall { saved /= 2 }
+		if saved > value {
+			wall, value = w, saved
+		}
+	}
+	return
 }
 
 // The target the unit is likeliest to hurt (see ai_tactical_unit), or -1.

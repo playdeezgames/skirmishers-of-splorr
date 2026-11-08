@@ -12,6 +12,8 @@ Terrain :: enum u8 {
 	Deep, // deep water: nobody crosses it (a road over it is a bridge)
 	Wood_Wall, // a palisade
 	Stone_Wall,
+	Cracked_Wall, // a stone wall a sapper has struck once: still a wall
+	Rubble, // what a sapper leaves of a wall: slow going, blocks nothing
 }
 
 TERRAIN_NAMES := [Terrain]string {
@@ -22,12 +24,15 @@ TERRAIN_NAMES := [Terrain]string {
 	.Deep       = "Deep water",
 	.Wood_Wall  = "Wooden wall",
 	.Stone_Wall = "Stone wall",
+	.Cracked_Wall = "Cracked stone wall",
+	.Rubble     = "Rubble",
 }
 
 // Deep water and walls cannot be entered. Walls also block sight, except to
 // a unit right next to them (it looks over), and give cover from shots to a
-// unit right behind them (see line_of_sight and wall_cover). Wooden and stone
-// walls play alike for now; siege machinery may tell them apart.
+// unit right behind them (see line_of_sight and wall_cover). A sapper breaks
+// a wooden wall into rubble with one blow and a stone wall with two (it
+// cracks first; see demolish).
 TERRAIN_PASSABLE := [Terrain]bool {
 	.Grass      = true,
 	.Forest     = true,
@@ -36,10 +41,12 @@ TERRAIN_PASSABLE := [Terrain]bool {
 	.Deep       = false,
 	.Wood_Wall  = false,
 	.Stone_Wall = false,
+	.Cracked_Wall = false,
+	.Rubble     = true,
 }
 
 is_wall :: proc(t: Terrain) -> bool {
-	return t == .Wood_Wall || t == .Stone_Wall
+	return t == .Wood_Wall || t == .Stone_Wall || t == .Cracked_Wall
 }
 
 is_water :: proc(t: Terrain) -> bool {
@@ -57,6 +64,8 @@ TERRAIN_MOVE_COST := [Terrain]int {
 	.Deep       = 0, // impassable (TERRAIN_PASSABLE)
 	.Wood_Wall  = 0,
 	.Stone_Wall = 0,
+	.Cracked_Wall = 0,
+	.Rubble     = 2,
 }
 
 // Movement is counted in half points so a road step can cost 1/2.
@@ -75,6 +84,10 @@ step_cost :: proc(from, to: Terrain, from_high, to_high: bool) -> int {
 	if to_high && !from_high { cost += ROAD_CLIMB_HALVES if road else CLIMB_HALVES }
 	return cost
 }
+
+// A sapper's price: a kobold (10) and what breaking walls is worth; see
+// DESIGN.md (Sappers) for the simulator runs.
+SAPPER_POINTS :: 12
 
 // ---------------------------------------------------------------- dice
 
@@ -138,6 +151,7 @@ Weapon_Kind :: enum u8 {
 	Bow,
 	Crossbow,
 	Pike,
+	Pick,
 }
 
 Weapon :: struct {
@@ -158,6 +172,7 @@ WEAPONS := [Weapon_Kind]Weapon {
 	.Bow    = {name = "bow", verb = "shoots", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 5},
 	.Crossbow = {name = "crossbow", verb = "bolts", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 2, max_range = 4, pierce = true},
 	.Pike   = {name = "pike", verb = "skewers", attack = {.White = 0, .Red = 1, .Black = 0}, min_range = 1, max_range = 1, first_strike = true},
+	.Pick   = {name = "pick", verb = "hacks", attack = {.White = 1, .Red = 0, .Black = 0}, min_range = 1, max_range = 1},
 }
 
 // ---------------------------------------------------------------- armour
@@ -225,6 +240,7 @@ Unit_Kind :: enum u8 {
 	Crossbow,
 	Pike,
 	Wololo,
+	Sapper,
 }
 
 Unit_Type :: struct {
@@ -238,6 +254,7 @@ Unit_Type :: struct {
 	points:  int, // army-building cost; set with tools/sim.sh so equal points fight about even
 	vision:  int, // hexes it sees under fog of war (fog.odin)
 	chants:  bool, // may bless a friend or curse an enemy (chant)
+	sapper:  bool, // may break a wall next to it (demolish)
 }
 
 UNIT_TYPES := [Unit_Kind]Unit_Type {
@@ -336,6 +353,17 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		vision = 6,
 		chants = true,
 	},
+	.Sapper = {
+		name = "Kobold Sapper",
+		short = "Sapper",
+		weapons = {.Pick}, // fights like a kobold's dagger
+		defense = {.White = 1, .Red = 0, .Black = 0},
+		body = 1,
+		move = 4,
+		points = SAPPER_POINTS,
+		vision = 5,
+		sapper = true,
+	},
 }
 
 Unit :: struct {
@@ -411,6 +439,7 @@ Event_Kind :: enum u8 {
 	Attack,
 	Fortify,
 	Chant,
+	Demolish,
 }
 
 Event :: struct {
@@ -423,6 +452,7 @@ Event :: struct {
 	target_pos: Hex, // attacks: where the target stood; chants: the centre hex
 	result:     Attack_Result,
 	bless:      bool, // chants: a blessing (else a curse)
+	rubble:     bool, // demolish: the wall fell (else a stone wall cracked)
 }
 
 push_event :: proc(g: ^Game, e: Event) {
@@ -449,6 +479,7 @@ Game :: struct {
 	attacks:       [MAX_FACTIONS][Weapon_Kind]int,
 	kills:         [MAX_FACTIONS][Weapon_Kind]int,
 	fortifies:     [MAX_FACTIONS]int,
+	demolished:    [MAX_FACTIONS]int, // walls broken or cracked by sappers (tools/sim.sh)
 	// fog of war (fog.odin); off unless new_game or the simulator turns it on
 	fog:           bool,
 	seen:          [MAX_FACTIONS]Hex_Mask, // explored
@@ -1039,7 +1070,52 @@ unit_finished :: proc(g: ^Game, unit: int) -> bool {
 	for i in 0 ..< g.unit_count {
 		if can_attack(g, unit, i) { return false }
 	}
-	return !can_chant_anywhere(g, unit)
+	return !can_chant_anywhere(g, unit) && !can_demolish_anywhere(g, unit)
+}
+
+// ---------------------------------------------------------------- demolishing
+
+// A sapper breaks a wall next to it instead of attacking: a wooden wall or a
+// cracked stone wall becomes rubble, a stone wall cracks (so stone takes two
+// blows, on two turns). Like an attack, it ends the sapper's move.
+can_demolish :: proc(g: ^Game, unit: int, h: Hex) -> bool {
+	u := &g.units[unit]
+	if g.winner >= 0 || !u.alive || u.faction != g.current || u.done || u.attacked || !unit_type(u).sapper { return false }
+	return in_bounds(h) && hex_distance(u.pos, h) == 1 && is_wall(terrain_at(g, h))
+}
+
+can_demolish_anywhere :: proc(g: ^Game, unit: int) -> bool {
+	if !unit_type(&g.units[unit]).sapper { return false }
+	nbs, n := neighbours(g.units[unit].pos)
+	for nb in nbs[:n] {
+		if can_demolish(g, unit, nb) { return true }
+	}
+	return false
+}
+
+demolish :: proc(g: ^Game, unit: int, h: Hex) -> bool {
+	if !can_demolish(g, unit, h) { return false }
+	u := &g.units[unit]
+	u.attacked = true
+	u.moves_left = 0
+	u.done = true
+	old := terrain_at(g, h)
+	rubble := old != .Stone_Wall
+	g.terrain[h.y][h.x] = .Rubble if rubble else .Cracked_Wall
+	// the map changed: sight lines and the computer's reach maps with it
+	clear_view_cache(g)
+	g.ai_threat = {}
+	g.ai_reach = {}
+	g.demolished[u.faction] += 1
+	push_event(g, {kind = .Demolish, unit = unit, from = u.pos, target_pos = h, rubble = rubble})
+	name := g.factions[u.faction].name
+	if rubble {
+		add_log(g, "%s %s breaks the %s into rubble", name, unit_type(u).short, "wooden wall" if old == .Wood_Wall else "stone wall")
+	} else {
+		add_log(g, "%s %s cracks the stone wall", name, unit_type(u).short)
+	}
+	update_vision(g, u.faction)
+	return true
 }
 
 // ---------------------------------------------------------------- chanting
