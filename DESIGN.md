@@ -341,7 +341,12 @@ face (simulator, 400 games each):
 Set to **20 points** (from 14), close to the mixed-army value. A single price
 cannot cover hills or slow heavies; if those stay lopsided, the fix is in the
 rules, e.g. the high-ground range bonus as +1 hex instead of x1.5 for the bow,
-or heavies that can double-move. Not done; for the user to decide.
+or heavies that can double-move.
+
+**Decided November 8, 2026: archers being overpowered on hills is by
+design.** Holding high ground with bows is meant to pay off; it will matter
+more in a campaign of several battles, where choosing (or being denied) the
+ground is part of the war. Keep the x1.5 range rule and the 20-point price.
 
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
