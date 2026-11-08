@@ -575,32 +575,48 @@ on_key :: proc(e: js.Event) {
 MENU_W :: f32(340)
 ITEM_H :: f32(30)
 
-// Where a menu is drawn: over the map while playing, in the middle of the
-// screen on the title screens.
+// How much larger than canvas pixels menus are drawn: 1 in the landscape
+// layout; in portrait as large as fits, up to PORTRAIT_UI_SCALE.
+menu_scale :: proc(id: Menu_Id) -> f32 {
+	if !portrait { return 1 }
+	return min(PORTRAIT_UI_SCALE, (canvas_w - 16) / menu_width(id))
+}
+
+menu_width :: proc(id: Menu_Id) -> f32 {
+	#partial switch id {
+	case .Help:             return 600
+	case .Scenarios, .Army: return 420
+	case .Custom:           return 480
+	}
+	return MENU_W
+}
+
+// Where a menu is drawn, in menu coordinates (canvas pixels / menu_scale):
+// over the map while playing, in the middle of the screen on the title screens.
 menu_box :: proc(id: Menu_Id) -> (x, y, w, h: f32) {
 	items := menu_items(id)
 	extra := menu_text_lines(id)
-	w = MENU_W if id != .Help else 600
+	s := menu_scale(id)
+	w = menu_width(id)
 	h = menu_items_top(id) + f32(extra) * 18 + f32(len(items)) * ITEM_H + 14
-	cx := f32(CANVAS_W) / 2 if on_title() else (PANEL_X - 12) / 2
-	#partial switch id {
-	case .Scenarios, .Army: w = 420
-	case .Custom:           w = 480
-	}
-	x = cx - w / 2
-	y = max(16, f32(CANVAS_H) / 2 - h / 2 + (60 if on_title() && id == .Title else 0))
+	cx := canvas_w / 2 if on_title() || portrait else (PANEL_X - 12) / 2
+	cy := canvas_h / 2 if on_title() else MAP_H / 2
+	x = cx / s - w / 2
+	y = max(16, cy / s - h / 2 + (60 if on_title() && id == .Title else 0))
 	return
 }
 
 menu_item_at :: proc(x, y: f32) -> int {
 	if !menu_open() { return -1 }
 	id := menu_top()
+	s := menu_scale(id)
+	mx, my := x / s, y / s
 	bx, by, bw, _ := menu_box(id)
 	items := menu_items(id)
 	top := by + menu_items_top(id) + f32(menu_text_lines(id)) * 18
 	for i in 0 ..< len(items) {
 		iy := top + f32(i) * ITEM_H
-		if x >= bx + 12 && x < bx + bw - 12 && y >= iy && y < iy + ITEM_H - 4 { return i }
+		if mx >= bx + 12 && mx < bx + bw - 12 && my >= iy && my < iy + ITEM_H - 4 { return i }
 	}
 	return -1
 }
@@ -614,7 +630,7 @@ mouse_move :: proc "c" (x, y: f32) {
 		return
 	}
 	h := screen_to_hex(x, y)
-	if game.in_bounds(h) && x < PANEL_X - 4 {
+	if game.in_bounds(h) && on_map(x, y) {
 		put_cursor(h)
 		cursor_on = true
 	}
@@ -646,7 +662,8 @@ click :: proc(x, y: f32, tap: bool) {
 			menu_sel[menu_top()] = i
 			it := menu_items(menu_top())[i]
 			bx, _, bw, _ := menu_box(menu_top())
-			if it.action == .Buy && x >= sell_x(bx, bw) - 4 && x < sell_x(bx, bw) + 24 { menu_dir = -1 }
+			mx := x / menu_scale(menu_top())
+			if it.action == .Buy && mx >= sell_x(bx, bw) - 4 && mx < sell_x(bx, bw) + 24 { menu_dir = -1 }
 			activate(it)
 			menu_dir = 1
 		} else if menu_top() == .Unit {
@@ -654,16 +671,17 @@ click :: proc(x, y: f32, tap: bool) {
 		}
 		return
 	}
-	if in_button(MENU_BUTTON, x, y) {
+	px, py := to_panel(x, y)
+	if in_button(MENU_BUTTON, px, py) {
 		push_menu(.Pause)
 		return
 	}
-	if in_button(END_TURN_BUTTON, x, y) && show_end_turn_button() {
+	if in_button(END_TURN_BUTTON, px, py) && show_end_turn_button() {
 		end_human_turn()
 		return
 	}
 	h := screen_to_hex(x, y)
-	if x >= PANEL_X - 4 || !game.in_bounds(h) { return }
+	if !on_map(x, y) || !game.in_bounds(h) { return }
 	if tap && !(cursor_on && h == cursor) {
 		put_cursor(h) // look first
 		cursor_on = true
@@ -721,17 +739,25 @@ HELP := [?]string {
 
 draw_menus :: proc() {
 	if !menu_open() { return }
+	id := menu_top()
+	x, y, w, h := menu_box(id)
+	ms := menu_scale(id)
 	if on_title() {
-		fill_rect(0, 0, CANVAS_W, CANVAS_H, 0.05, 0.05, 0.08, 0.72)
-		if menu_top() == .Title {
-			text("Skirmishers of SPLORR!!", f32(CANVAS_W) / 2, 120, 44, GOLD, 1)
-			text("kobolds, dice and hexes", f32(CANVAS_W) / 2, 168, 18, GREY, 1)
+		fill_rect(0, 0, canvas_w, canvas_h, 0.05, 0.05, 0.08, 0.72)
+		if id == .Title {
+			// above the menu, in canvas pixels (too wide to scale up in portrait)
+			text("Skirmishers of SPLORR!!", canvas_w / 2, y * ms - 154, 44, GOLD, 1)
+			text("kobolds, dice and hexes", canvas_w / 2, y * ms - 106, 18, GREY, 1)
 		}
+		hint := "Tap to choose" if touched else "Arrows / WASD / D-pad to choose, Space / Enter / A to pick, Esc / B to go back"
+		text(hint, canvas_w / 2, canvas_h - 18, 12, GREY, 1)
+	} else if portrait {
+		fill_rect(0, 0, canvas_w, MAP_H - 4, 0, 0, 0, 0.5)
 	} else {
 		fill_rect(0, 0, PANEL_X - 4, CANVAS_H, 0, 0, 0, 0.5)
 	}
-	id := menu_top()
-	x, y, w, h := menu_box(id)
+	set_transform(ms, 0, 0)
+	defer set_transform(1, 0, 0)
 	fill_rect(x, y, w, h, 0.13, 0.14, 0.19, 0.97)
 	fill_rect(x, y, w, 3, GOLD.r, GOLD.g, GOLD.b, 1)
 	titles := [Menu_Id]string {
@@ -795,8 +821,5 @@ draw_menus :: proc() {
 			text("+", px + 10, mid, 14, WHITE if afford else Color{0.4, 0.4, 0.45}, 1)
 			text(it.value, (sx + 20 + px) / 2, mid, 14, GOLD, 1)
 		}
-	}
-	if on_title() {
-		text("Arrows / WASD / D-pad to choose, Space / Enter / A to pick, Esc / B to go back", f32(CANVAS_W) / 2, f32(CANVAS_H) - 18, 12, GREY, 1)
 	}
 }

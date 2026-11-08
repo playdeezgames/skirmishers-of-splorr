@@ -88,6 +88,17 @@ results exactly.
   readable). **On a phone in portrait (375 wide) the canvas is 35% size: hexes
   about 11 px and panel text about 4 px, too small to play; landscape is
   better (about 57%). A phone layout is not done.**
+- **Portrait layout (phones held upright). Built November 8, 2026:** the map
+  on top at full width and the panel below it, drawn 1.5 times larger, with
+  the log cut to 6 lines (a 672x1327 canvas). Menus are drawn up to 1.6 times
+  larger (wide ones as large as fits). The page picks whichever layout shows
+  the map larger, and portrait on a tie (within 5%), so a phone upright
+  (map about 52% size, up from 35%; panel text about 9 px) and a tablet
+  upright use it, while a phone sideways, a tablet sideways and a desktop
+  keep the landscape layout. It switches when the phone is turned round. The
+  page footer now wraps on narrow screens instead of hiding its links.
+  Hexes are still small on a phone (about 17 px across); zooming or panning
+  the map would be the next step if that is not enough.
 - **Animation:** units slide along their path and attacks flash, so the computer's
   turn can be followed.
 - **Art and sound** made with the Anvil tools, as for other SPLORR!! games.
@@ -361,7 +372,7 @@ The user's list of what the game still needs, to be planned one at a time:
 5. Computer player improvements. **Done November 6, 2026.**
 6. Move animation; Anvil art and sound. **Done November 6, 2026.**
 7. Tap to inspect (check on a touch-size screen). **Done November 7, 2026**
-   (tablet size works; phones need their own layout).
+   (tablet size works); portrait layout for phones November 8, 2026.
 8. Armour and more unit types (see that section); parts 1-4 done November 6,
    2026, part 5 (mixed-band scenarios) November 7, 2026. **Done.**
 9. Interface overhaul: menus, one control scheme for gamepad and keyboard,

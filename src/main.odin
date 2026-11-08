@@ -35,6 +35,8 @@ foreign canvas {
 	// settings kept in the browser; load gives -1 for one never saved
 	load_option :: proc(id: i32) -> i32 ---
 	save_option :: proc(id: i32, value: i32) ---
+	// scale and offset for everything drawn after it (1, 0, 0 = canvas pixels)
+	set_transform :: proc(scale, dx, dy: f32) ---
 }
 
 // Sprites in art.png, in the Anvil sprite-set order (assets/art/world.json).
@@ -98,12 +100,66 @@ play :: proc(s: Sound) {
 	play_sound(i32(s))
 }
 
-CANVAS_W :: 1060
+CANVAS_W :: 1060 // the landscape layout: map on the left, panel on the right
 CANVAS_H :: 580
 HEX_R :: f32(18)
 MAP_X :: f32(12) // pixel offset of the map
 MAP_Y :: f32(14)
 PANEL_X :: f32(672)
+
+// The portrait layout (phones held upright; the page picks whichever layout
+// shows the map larger, see `fit` in web/index.html): the map on top, and the
+// panel below it drawn PORTRAIT_PANEL_SCALE times larger, with a shorter log.
+// Panel code always draws in landscape panel coordinates (x from PANEL_X);
+// `panel_scale` / `panel_dx` / `panel_dy` place it on the canvas.
+PORTRAIT_W :: 672
+MAP_H :: f32(CANVAS_H) // the map's height on the canvas in both layouts
+PORTRAIT_PANEL_SCALE :: f32(1.5)
+PORTRAIT_LOG_LINES :: 6
+PORTRAIT_PANEL_H :: f32(384 + PORTRAIT_LOG_LINES * 14 + 30) // in panel coordinates
+PORTRAIT_UI_SCALE :: f32(1.6) // menus, at most (a wide menu is scaled to fit)
+portrait := false
+canvas_w := f32(CANVAS_W)
+canvas_h := f32(CANVAS_H)
+panel_scale := f32(1)
+panel_dx := f32(0)
+panel_dy := f32(0)
+
+PORTRAIT_H :: MAP_H + PORTRAIT_PANEL_H * PORTRAIT_PANEL_SCALE // 1327
+
+@(export)
+portrait_canvas_height :: proc "c" () -> i32 {
+	return i32(PORTRAIT_H)
+}
+
+// Called by the page whenever it picks a layout (and resizes the canvas).
+@(export)
+set_portrait :: proc "c" (on: b32) {
+	portrait = bool(on)
+	if portrait {
+		canvas_w, canvas_h = PORTRAIT_W, PORTRAIT_H
+		panel_scale = PORTRAIT_PANEL_SCALE
+		panel_dx = 12 - PANEL_X * panel_scale
+		panel_dy = MAP_H
+	} else {
+		canvas_w, canvas_h = CANVAS_W, CANVAS_H
+		panel_scale, panel_dx, panel_dy = 1, 0, 0
+	}
+}
+
+// A canvas point in panel coordinates (where the panel's buttons are).
+to_panel :: proc(x, y: f32) -> (f32, f32) {
+	return (x - panel_dx) / panel_scale, (y - panel_dy) / panel_scale
+}
+
+// Is a canvas point over the map (not the panel)?
+on_map :: proc(x, y: f32) -> bool {
+	return y < MAP_H - 4 if portrait else x < PANEL_X - 4
+}
+
+panel_height :: proc() -> f32 {
+	return PORTRAIT_PANEL_H if portrait else CANVAS_H
+}
 AI_DELAY :: 0.25 // seconds between computer actions, after each one's animation
 
 Color :: [3]f32
@@ -526,6 +582,8 @@ draw_chant_area :: proc() {
 }
 
 draw_panel :: proc() {
+	set_transform(panel_scale, panel_dx, panel_dy)
+	defer set_transform(1, 0, 0)
 	x := PANEL_X
 	text("Skirmishers of SPLORR!!", x, 24, 20, GOLD)
 	if !on_title() { button(MENU_BUTTON, "Menu (Esc)", !menu_open()) }
@@ -578,18 +636,18 @@ draw_panel :: proc() {
 	}
 
 	text("Log", x, 366, 14, GOLD)
-	for i in 0 ..< g.log_count {
+	for i in 0 ..< (min(g.log_count, PORTRAIT_LOG_LINES) if portrait else g.log_count) {
 		shade := 1 - f32(i) * 0.06
 		text(game.log_line(&g, i), x, 384 + f32(i) * 14, 11, WHITE * shade)
 	}
-	text(control_hint(), x, f32(CANVAS_H) - 12, 11, Color{0.75, 0.75, 0.55})
+	text(control_hint(), x, panel_height() - 12, 11, Color{0.75, 0.75, 0.55})
 }
 
 // What OK and Cancel do right now, at the foot of the panel.
 control_hint :: proc() -> string {
 	switch {
 	case menu_open():
-		return "Up/Down choose   OK pick   Cancel back"
+		return "Tap to choose" if touched else "Up/Down choose   OK pick   Cancel back"
 	case !human_turn():
 		return "Cancel: menu"
 	case touched && chant_mode == .Bless:

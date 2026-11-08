@@ -28,7 +28,7 @@ The game starts on a title screen (Play, Options, How to play); Play lists the b
 | Cancel / back | Esc or Backspace | B | the Menu button | the Menu button |
 | Menu | Tab or P (Esc with nothing selected) | Start or Select | the Menu button | the Menu button |
 
-On a touch screen a tap on a hex shows what is there before anything happens; tap it again to move, attack or chant there. A tap on one of your own units selects it at once. Tablets work well; on a phone, turn it sideways (the board is small).
+On a touch screen a tap on a hex shows what is there before anything happens; tap it again to move, attack or chant there. A tap on one of your own units selects it at once. On a screen held upright (a phone, or a tablet) the panel moves below the map and is drawn larger.
 
 - When your turn starts, your first unit is selected and the cursor is on it. Yellow hexes show where it can move and a red ring marks an enemy it can attack: OK on either does it. After a unit acts, the next one is selected for you.
 - OK on another of your units selects it. OK on the selected unit again opens its menu: **Fortify**, **Finish move**, and for a Wololo **Chant** (bless or curse an area).
