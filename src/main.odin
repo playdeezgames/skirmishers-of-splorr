@@ -37,6 +37,9 @@ foreign canvas {
 	save_option :: proc(id: i32, value: i32) ---
 	// scale and offset for everything drawn after it (1, 0, 0 = canvas pixels)
 	set_transform :: proc(scale, dx, dy: f32) ---
+	// only draw inside this rectangle (canvas pixels) until clip_off
+	clip_rect :: proc(x, y, w, h: f32) ---
+	clip_off :: proc() ---
 }
 
 // Sprites in art.png, in the Anvil sprite-set order (assets/art/world.json).
@@ -136,6 +139,8 @@ portrait_canvas_height :: proc "c" () -> i32 {
 @(export)
 set_portrait :: proc "c" (on: b32) {
 	portrait = bool(on)
+	context = ctx
+	defer clamp_view()
 	if portrait {
 		canvas_w, canvas_h = PORTRAIT_W, PORTRAIT_H
 		panel_scale = PORTRAIT_PANEL_SCALE
@@ -230,6 +235,7 @@ start_game :: proc(n: int) {
 	backdrop_timer = 0
 	game_over_shown = false
 	auto_side = -1
+	reset_view()
 	anim_skip()
 	last_winner = -1
 	last_turn_owner = -1
@@ -334,7 +340,97 @@ in_button :: proc(b: Button, x, y: f32) -> bool {
 }
 
 screen_to_hex :: proc(x, y: f32) -> game.Hex {
-	return game.pixel_to_hex({x - MAP_X, y - MAP_Y}, HEX_R)
+	mx, my := to_map(x, y)
+	return game.pixel_to_hex({mx - MAP_X, my - MAP_Y}, HEX_R)
+}
+
+// ---------------------------------------------------------------- zoom and pan
+
+// The map is drawn in map coordinates (hex_centre: the whole map at zoom 1)
+// under set_transform(map_zoom, map_dx, map_dy), clipped to its area. Pinch or
+// the mouse wheel zooms, a drag pans, + / - / 0 (and the gamepad's shoulder
+// buttons) zoom round the cursor; keyboard and gamepad cursor moves and the
+// computer's actions scroll the view to stay in sight.
+MAX_ZOOM :: f32(3)
+map_zoom := f32(1)
+map_dx := f32(0)
+map_dy := f32(0)
+
+// The map's area on the canvas (from 0, 0).
+map_area :: proc() -> (w, h: f32) {
+	if portrait { return canvas_w, MAP_H - 4 }
+	return PANEL_X - 4, CANVAS_H
+}
+
+to_map :: proc(x, y: f32) -> (f32, f32) {
+	return (x - map_dx) / map_zoom, (y - map_dy) / map_zoom
+}
+
+// Keeps the zoomed map covering its whole area.
+clamp_view :: proc() {
+	w, h := map_area()
+	map_zoom = clamp(map_zoom, 1, MAX_ZOOM)
+	map_dx = clamp(map_dx, w * (1 - map_zoom), 0)
+	map_dy = clamp(map_dy, h * (1 - map_zoom), 0)
+}
+
+reset_view :: proc() {
+	map_zoom, map_dx, map_dy = 1, 0, 0
+}
+
+can_zoom :: proc() -> bool {
+	return !on_title() && !menu_open()
+}
+
+// Zoom by `factor`, keeping the canvas point (x, y) over the same spot.
+zoom_at :: proc(factor, x, y: f32) {
+	mx, my := to_map(x, y)
+	map_zoom = clamp(map_zoom * factor, 1, MAX_ZOOM)
+	map_dx, map_dy = x - mx * map_zoom, y - my * map_zoom
+	clamp_view()
+}
+
+// Zoom one step in (dir 1), out (-1) or back to the whole map (0), round the
+// cursor.
+zoom_step :: proc(dir: int) {
+	if dir == 0 { reset_view(); return }
+	p := hex_centre(cursor) * map_zoom + {map_dx, map_dy}
+	zoom_at(1.5 if dir > 0 else 1 / 1.5, p.x, p.y)
+	follow_hex(cursor)
+}
+
+// Scrolls the view so a hex is in sight, with a margin.
+follow_hex :: proc(h: game.Hex) {
+	if map_zoom <= 1 { return }
+	w, ht := map_area()
+	p := hex_centre(h) * map_zoom + {map_dx, map_dy}
+	m := HEX_R * 2 * map_zoom
+	if p.x < m { map_dx += m - p.x }
+	if p.x > w - m { map_dx -= p.x - (w - m) }
+	if p.y < m { map_dy += m - p.y }
+	if p.y > ht - m { map_dy -= p.y - (ht - m) }
+	clamp_view()
+}
+
+@(export)
+map_zoom_at :: proc "c" (factor, x, y: f32) {
+	context = ctx
+	if can_zoom() && on_map(x, y) { zoom_at(factor, x, y) }
+}
+
+@(export)
+map_pan :: proc "c" (dx, dy: f32) {
+	context = ctx
+	if !can_zoom() { return }
+	map_dx += dx
+	map_dy += dy
+	clamp_view()
+}
+
+@(export)
+map_zoom_step :: proc "c" (dir: i32) {
+	context = ctx
+	if can_zoom() { zoom_step(int(dir)) }
 }
 
 hex_centre :: proc(h: game.Hex) -> [2]f32 {
@@ -353,6 +449,7 @@ select_next_unit :: proc() {
 			selected = i
 			put_cursor(u.pos)
 			cursor_on = true
+			follow_hex(u.pos)
 			return
 		}
 	}
@@ -483,6 +580,14 @@ turn_sounds :: proc() {
 }
 
 draw_map :: proc() {
+	if on_title() {
+		set_transform(1, 0, 0)
+	} else {
+		w, h := map_area()
+		clip_rect(0, 0, w, h)
+		set_transform(map_zoom, map_dx, map_dy)
+	}
+	defer { set_transform(1, 0, 0); clip_off() }
 	view := viewer()
 	costs: [game.ROWS][game.COLS]int
 	if selected >= 0 { costs = game.movement_costs(&g, selected) }

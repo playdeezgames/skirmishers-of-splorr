@@ -85,6 +85,8 @@ anim_update :: proc(dt: f64) {
 		dur := anim_duration(&ev, view)
 		if dur <= 0 { continue }
 		anim = {active = true, ev = ev, dur = dur}
+		// a zoomed-in view scrolls to show what happens
+		if ev.kind == .Move && ev.steps > 0 { follow_hex(ev.path[ev.steps - 1]) } else { follow_hex(ev.target_pos if ev.kind != .Fortify else ev.from) }
 		switch ev.kind {
 		case .Move:    play(.Step)
 		case .Attack:  play(WEAPON_SOUNDS[ev.result.weapon])

@@ -99,6 +99,16 @@ results exactly.
   page footer now wraps on narrow screens instead of hiding its links.
   Hexes are still small on a phone (about 17 px across); zooming or panning
   the map would be the next step if that is not enough.
+- **Map zoom and pan. Built November 8, 2026** (asked for phones, works
+  everywhere): pinch or the mouse wheel zooms round the fingers or pointer,
+  up to 3x; a drag (more than 8 CSS pixels) pans instead of tapping or
+  clicking; + / - zoom round the cursor and 0 shows the whole map again;
+  the gamepad's LB / RB zoom too. The zoomed map never leaves a gap at its
+  edges. Keyboard and gamepad cursor moves, selecting the next unit and each
+  shown computer action scroll the view to keep them in sight (the mouse
+  and taps never scroll it). A new battle starts at the whole map; menus
+  and the title screen do not zoom. Mouse clicks now act on release (so a
+  drag can pan), still at once for the player.
 - **Animation:** units slide along their path and attacks flash, so the computer's
   turn can be followed.
 - **Art and sound** made with the Anvil tools, as for other SPLORR!! games.

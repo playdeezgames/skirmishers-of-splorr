@@ -485,6 +485,7 @@ move_cursor :: proc(btn: Input) {
 	cursor = c
 	if btn == .Left || btn == .Right { cursor_pref_x = hex_centre(c).x }
 	cursor_on = true
+	follow_hex(c)
 }
 
 put_cursor :: proc(h: game.Hex) {
@@ -570,6 +571,12 @@ on_key :: proc(e: js.Event) {
 			chant_mode = Chant_Mode((int(chant_mode) + 1) % len(Chant_Mode)) // off, bless, curse
 			cursor_on = true
 		}
+	case "+", "=":
+		if can_zoom() { zoom_step(1) }
+	case "-", "_":
+		if can_zoom() { zoom_step(-1) }
+	case "0":
+		if can_zoom() { zoom_step(0) }
 	case "e", "E":
 		if !menu_open() && !anim_busy() && human_turn() { end_human_turn() }
 	case "v", "V":
@@ -735,6 +742,7 @@ HELP := [?]string {
 	"",
 	"Cursor: arrows, WASD, D-pad or the mouse.  OK: Space, Enter, A or click.",
 	"Touch: tap a hex to look at it, tap it again to act there.",
+	"Zoom: pinch, mouse wheel, + / - (0 whole map), LB / RB. Drag to pan.",
 	"Back / menu: Esc, B (Start opens the menu too).",
 	"OK on your unit selects it; OK on a yellow hex moves it there; OK on a",
 	"red-ringed enemy attacks. OK on the selected unit again: fortify, finish",

@@ -27,6 +27,8 @@ The game starts on a title screen (Play, Options, How to play); Play lists the b
 | OK | Space or Enter | A | click | tap the cursor's hex again |
 | Cancel / back | Esc or Backspace | B | the Menu button | the Menu button |
 | Menu | Tab or P (Esc with nothing selected) | Start or Select | the Menu button | the Menu button |
+| Zoom the map in / out | + / - (0 shows the whole map) | LB / RB | wheel | pinch |
+| Pan the zoomed map | the cursor scrolls it | the cursor scrolls it | drag | drag |
 
 On a touch screen a tap on a hex shows what is there before anything happens; tap it again to move, attack or chant there. A tap on one of your own units selects it at once. On a screen held upright (a phone, or a tablet) the panel moves below the map and is drawn larger.
 

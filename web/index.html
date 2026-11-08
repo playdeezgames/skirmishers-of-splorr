@@ -119,6 +119,8 @@
 				save_option: (id, value) => {
 					try { localStorage.setItem("skirmishers.option." + id, String(value)); } catch (e) {}
 				},
+				clip_rect: (x, y, w, h) => { g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); },
+				clip_off: () => { g.restore(); },
 				set_transform: (s, dx, dy) => { g.setTransform(s, 0, 0, s, dx, dy); },
 				draw_text: (ptr, len, x, y, size, r, gr, b, align) => {
 					g.font = `${size}px monospace`;
@@ -136,24 +138,76 @@
 			const r = cv.getBoundingClientRect();
 			return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
 		};
-		cv.addEventListener("pointermove", (e) => {
-			// a finger dragging is not hovering: only the mouse moves the cursor
-			if (memory.exports && e.pointerType === "mouse") memory.exports.mouse_move(...toCanvas(e));
-		});
-		cv.addEventListener("pointerleave", () => {
-			if (memory.exports) memory.exports.mouse_move(-1, -1);
-		});
+		// Pointers. The mouse hovers (pointing moves the cursor) and clicks on
+		// release; a touch has no hover, so a tap (touch_tap) looks first. A drag
+		// (past DRAG_PX) pans the map instead of clicking, two fingers pinch to
+		// zoom, and the mouse wheel zooms.
+		const DRAG_PX = 8; // CSS pixels
+		const pts = new Map(); // pointerId -> {x, y} in client pixels
+		let downAt = null, dragged = false, pinch = 0;
+		const scaleK = () => cv.width / cv.getBoundingClientRect().width; // canvas px per CSS px
+		const mid = () => { const a = [...pts.values()]; return [(a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2]; };
+		const spread = () => { const a = [...pts.values()]; return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); };
+		const toCanvasXY = (x, y) => toCanvas({ clientX: x, clientY: y });
 		cv.addEventListener("pointerdown", (e) => {
+			if (!memory.exports || (e.pointerType === "mouse" && e.button !== 0)) return;
+			try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+			pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			if (pts.size === 1) {
+				downAt = { x: e.clientX, y: e.clientY };
+				dragged = false;
+			} else {
+				dragged = true; // a second finger: no tap
+				pinch = spread();
+			}
+		});
+		cv.addEventListener("pointermove", (e) => {
 			if (!memory.exports) return;
-			const [x, y] = toCanvas(e);
-			if (e.pointerType === "touch" || e.pointerType === "pen") {
-				// no hover on a touch screen: a tap looks first (touch_tap)
-				memory.exports.touch_tap(x, y);
+			const p = pts.get(e.pointerId);
+			if (!p) {
+				// a finger dragging is not hovering: only the mouse moves the cursor
+				if (e.pointerType === "mouse") memory.exports.mouse_move(...toCanvas(e));
 				return;
 			}
-			memory.exports.mouse_move(x, y);
-			memory.exports.mouse_click(x, y);
+			const k = scaleK();
+			if (pts.size >= 2) {
+				const [mx0, my0] = mid();
+				p.x = e.clientX; p.y = e.clientY;
+				const [mx1, my1] = mid();
+				const d = spread();
+				memory.exports.map_pan((mx1 - mx0) * k, (my1 - my0) * k);
+				if (pinch > 0 && d > 0) memory.exports.map_zoom_at(d / pinch, ...toCanvasXY(mx1, my1));
+				pinch = d;
+				return;
+			}
+			if (!dragged && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > DRAG_PX) dragged = true;
+			if (dragged) memory.exports.map_pan((e.clientX - p.x) * k, (e.clientY - p.y) * k);
+			p.x = e.clientX; p.y = e.clientY;
 		});
+		const release = (e, cancel) => {
+			if (!pts.has(e.pointerId)) return;
+			const single = pts.size === 1;
+			pts.delete(e.pointerId);
+			if (pts.size === 1) pinch = 0;
+			if (!single || dragged || cancel || !memory.exports) return;
+			const [x, y] = toCanvas(e);
+			if (e.pointerType === "touch" || e.pointerType === "pen") {
+				memory.exports.touch_tap(x, y); // no hover on a touch screen: a tap looks first
+			} else {
+				memory.exports.mouse_move(x, y);
+				memory.exports.mouse_click(x, y);
+			}
+		};
+		cv.addEventListener("pointerup", (e) => release(e, false));
+		cv.addEventListener("pointercancel", (e) => release(e, true));
+		cv.addEventListener("pointerleave", (e) => {
+			if (memory.exports && e.pointerType === "mouse" && !pts.size) memory.exports.mouse_move(-1, -1);
+		});
+		cv.addEventListener("wheel", (e) => {
+			if (!memory.exports) return;
+			e.preventDefault();
+			memory.exports.map_zoom_at(Math.exp(-e.deltaY * 0.0015), ...toCanvas(e));
+		}, { passive: false });
 
 		// Layout: landscape (1060x580, the panel right of the map) or portrait
 		// (672 wide, the panel below the map, larger), whichever shows the map
@@ -207,6 +261,14 @@
 				if (b(0)) down.ok = true;
 				if (b(1)) down.cancel = true;
 				if (b(9) || b(8)) down.menu = true;
+				if (b(4)) down.zoomOut = true; // LB / RB zoom the map
+				if (b(5)) down.zoomIn = true;
+			}
+			for (const [name, dir] of [["zoomIn", 1], ["zoomOut", -1]]) {
+				if (down[name] && !padHeld[name]) {
+					padHeld[name] = true;
+					if (memory.exports && memory.exports.map_zoom_step) memory.exports.map_zoom_step(dir);
+				} else if (!down[name]) delete padHeld[name];
 			}
 			for (const name in PAD) {
 				if (down[name]) {
