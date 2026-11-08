@@ -8,7 +8,8 @@
 		html, body { margin: 0; height: 100%; background: #111; }
 		body { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font: 12px/1.4 monospace; }
 		canvas { width: min(100vw, calc((100vh - 44px) * 1060 / 580)); aspect-ratio: 1060 / 580; display: block; touch-action: none; }
-		footer { margin-top: 6px; height: 38px; overflow: hidden; text-align: center; max-width: 95vw; }
+		footer { margin-top: 6px; min-height: 38px; text-align: center; max-width: 95vw; }
+		@media (max-width: 700px) { footer { font-size: 10px; } }
 		footer a { color: #aaa; }
 		#log { position: fixed; left: 0; bottom: 0; margin: 0; color: #aaa; font: 12px monospace; }
 	</style>
@@ -118,6 +119,7 @@
 				save_option: (id, value) => {
 					try { localStorage.setItem("skirmishers.option." + id, String(value)); } catch (e) {}
 				},
+				set_transform: (s, dx, dy) => { g.setTransform(s, 0, 0, s, dx, dy); },
 				draw_text: (ptr, len, x, y, size, r, gr, b, align) => {
 					g.font = `${size}px monospace`;
 					g.textAlign = ["left", "center", "right"][align] || "left";
@@ -135,7 +137,8 @@
 			return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
 		};
 		cv.addEventListener("pointermove", (e) => {
-			if (memory.exports) memory.exports.mouse_move(...toCanvas(e));
+			// a finger dragging is not hovering: only the mouse moves the cursor
+			if (memory.exports && e.pointerType === "mouse") memory.exports.mouse_move(...toCanvas(e));
 		});
 		cv.addEventListener("pointerleave", () => {
 			if (memory.exports) memory.exports.mouse_move(-1, -1);
@@ -143,9 +146,41 @@
 		cv.addEventListener("pointerdown", (e) => {
 			if (!memory.exports) return;
 			const [x, y] = toCanvas(e);
+			if (e.pointerType === "touch" || e.pointerType === "pen") {
+				// no hover on a touch screen: a tap looks first (touch_tap)
+				memory.exports.touch_tap(x, y);
+				return;
+			}
 			memory.exports.mouse_move(x, y);
 			memory.exports.mouse_click(x, y);
 		});
+
+		// Layout: landscape (1060x580, the panel right of the map) or portrait
+		// (672 wide, the panel below the map, larger), whichever shows the map
+		// larger (on a tie, portrait) in this window; checked every frame, redone when the window's
+		// size changes (a phone turned round). The footer keeps its own height.
+		const footer = document.querySelector("footer");
+		let fitted = "";
+		const fit = () => {
+			if (!memory.exports || !memory.exports.set_portrait) return;
+			const W = innerWidth, H = Math.max(100, innerHeight - footer.offsetHeight - 6);
+			if (fitted === W + "x" + H) return;
+			fitted = W + "x" + H;
+			const land = [1060, 580], port = [672, memory.exports.portrait_canvas_height()];
+			const scale = ([w, h]) => Math.min(W / w, H / h);
+			// portrait unless it would show the map noticeably smaller (its panel text is larger)
+			const portrait = scale(port) >= scale(land) * 0.95;
+			const [w, h] = portrait ? port : land;
+			if (cv.width !== w || cv.height !== h) {
+				cv.width = w; cv.height = h; // resets the context
+				g.imageSmoothingEnabled = false;
+			}
+			const s = scale([w, h]);
+			cv.style.width = Math.floor(w * s) + "px";
+			cv.style.height = Math.floor(h * s) + "px";
+			cv.style.aspectRatio = "auto";
+			memory.exports.set_portrait(portrait);
+		};
 
 		// Gamepad: polled every frame and turned into the same seven buttons as
 		// the keyboard (`Input` in src/ui.odin: 0 up, 1 down, 2 left, 3 right,
@@ -157,6 +192,7 @@
 		const REPEAT_DELAY = 0.35, REPEAT_EVERY = 0.12;
 		let padLast = performance.now();
 		const pollPads = (now) => {
+			fit();
 			const dt = (now - padLast) / 1000;
 			padLast = now;
 			const down = {};
