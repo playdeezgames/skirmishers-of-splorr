@@ -310,10 +310,12 @@ setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_
 }
 
 // Heavies, pikes, crossbows and a Wololo (142 points) against archers, a scout
-// and a crowd of kobolds (141): 50% to 49%.
+// and a crowd of kobolds (161): 53% to 47%. (Two kobolds more since November
+// 8, 2026, when the computer stopped fortifying under shooters that outrange
+// it: 74% to 24% before.)
 setup_shield_wall :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Crossbow, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Crossbow}
-	blue := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Kobold, .Kobold, .Kobold}
+	blue := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Kobold, .Kobold, .Kobold, .Kobold, .Kobold}
 	setup_bands(g, -1, 0, red[:], blue[:])
 }
 
@@ -338,11 +340,13 @@ setup_woods_ambush :: proc(g: ^Game) {
 }
 
 // Hilly ground, where bows shoot half as far again from high ground: four
-// archers and two heavies (130 points) against a shield wall with two kobolds
-// (162): 47% to 53%.
+// archers and two heavies (130 points) against a heavy, two pikes, two
+// crossbows and a Wololo (117): 50% to 50% (400 games; 54% to 46% in 300
+// more). Smaller since November 8, 2026, when the computer stopped
+// fortifying under shooters that outrange it (19% to 80% with the old 162).
 setup_archer_heights :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Archer, .Heavy, .Archer, .Archer, .Heavy, .Archer}
-	blue := [?]Unit_Kind{.Crossbow, .Kobold, .Heavy, .Pike, .Wololo, .Pike, .Heavy, .Kobold, .Crossbow}
+	blue := [?]Unit_Kind{.Crossbow, .Pike, .Wololo, .Heavy, .Pike, .Crossbow}
 	setup_bands(g, -1, 35, red[:], blue[:])
 }
 

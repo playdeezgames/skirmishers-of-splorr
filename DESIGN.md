@@ -436,6 +436,29 @@ that turns walls into rubble. Claude's defaults, easy to change:
 - **Walled Farmsteads** now gives each warband a sapper (216 points a side:
   47.5% to 52% over 400 games).
 
+## Fortifying under shooters (November 8, 2026)
+
+The user saw a lone pike keep fortifying against a lone archer until the
+archer got lucky. The computer fortified whenever it could not attack this
+turn but could be attacked next; against an enemy that outranges it that is
+only waiting to be shot. Now it does not fortify while an enemy in sight
+with a longer reach is near enough to shoot it next turn (`ai_outranged`); it
+advances instead, which drives a kiting shooter back to the map edge.
+
+- Lone duels: pike v archer 41% -> 56% (8 turns instead of 13), heavy v
+  archer 46% -> 85% (12 turns instead of 33; it had fortified 26 times a
+  game).
+- Armies built round archers lost most: Shield Wall vs Skirmishers went
+  50/49 -> 74/24 and Archers on the Heights 47/53 -> 19/80. Rebalanced by
+  composition: the skirmishers get two more kobolds (142 v 161: 53% to 47%),
+  and the Heights' shield wall drops a heavy and its two kobolds (130 v
+  117: about 50/50). Warband mirror 50/48.5, Champion's Guard 54/46 and
+  Ambush in the Woods 48/51 stayed in balance.
+- **Archers are now overpriced at 20 in open fights**: 5a v 7k went 53% ->
+  32%, 2h2p4a v 2h2p4s4k 50% -> 28%. Their old value leaned on the computer
+  sitting still under arrows. A new price is for the user to decide (hills
+  stay strong by design).
+
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 
 The user's list of what the game still needs, to be planned one at a time:

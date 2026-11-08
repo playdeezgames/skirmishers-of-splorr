@@ -1441,10 +1441,10 @@ test_mixed_band_scenarios :: proc(t: ^testing.T) {
 		hills:     int,
 	}
 	wants := [?]Want {
-		{"Shield Wall vs Skirmishers", 142, 141, -1, 0},
+		{"Shield Wall vs Skirmishers", 142, 161, -1, 0},
 		{"Champion's Guard vs the Horde", 165, 166, -1, 0},
 		{"Ambush in the Woods", 161, 122, 50, 0},
-		{"Archers on the Heights", 130, 162, -1, 35},
+		{"Archers on the Heights", 130, 117, -1, 35},
 	}
 	for w in wants {
 		idx := -1
@@ -1722,4 +1722,28 @@ test_ai_sapper_breaches :: proc(t: ^testing.T) {
 	broken = 0
 	for row in 0 ..< 6 { if g.terrain[row][10] == .Rubble { broken += 1 } }
 	testing.expect_value(t, broken, 0)
+}
+
+@(test)
+test_ai_no_fortify_when_outranged :: proc(t: ^testing.T) {
+	g := new(Game)
+	defer free(g)
+	blank_game(g)
+	g.factions[0].controller = .Computer
+	// a pike five hexes from an archer: it cannot strike, and the archer can
+	// shoot it next turn from beyond its reach; it advances, never fortifies
+	p := add_unit(g, .Pike, 0, {5, 10})
+	add_unit(g, .Archer, 1, {10, 10})
+	start_faction_turn(g)
+	g.contact_turn = 1 // the fighting has started: no holding back
+	update_vision(g, NO_FACTION)
+	testing.expect(t, ai_outranged(g, p))
+	ai_tactical_unit(g, p)
+	testing.expect(t, !g.units[p].fortified)
+	testing.expect(t, hex_distance(g.units[p].pos, {10, 10}) < 5)
+	// against a kobold (no longer reach) it may still dig in
+	blank_game(g)
+	k := add_unit(g, .Kobold, 0, {5, 10})
+	add_unit(g, .Kobold, 1, {10, 10})
+	testing.expect(t, !ai_outranged(g, k))
 }

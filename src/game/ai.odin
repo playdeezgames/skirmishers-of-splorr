@@ -225,6 +225,23 @@ ai_hex_score :: proc(g: ^Game, faction: int, ut: ^Unit_Type, h: Hex, view: ^Ai_V
 	return 2 + walk_to(view, h)
 }
 
+// True if some enemy the unit's side can see outreaches it and is near
+// enough to shoot it next turn (its move plus its reach, with the high-ground
+// bonus): against such an enemy, fortifying is only waiting to be shot.
+ai_outranged :: proc(g: ^Game, unit: int) -> bool {
+	u := &g.units[unit]
+	_, mine := unit_reach(unit_type(u))
+	for i in 0 ..< g.unit_count {
+		e := &g.units[i]
+		if !e.alive || e.faction == u.faction || !unit_visible(g, i, u.faction) { continue }
+		et := unit_type(e)
+		_, theirs := unit_reach(et)
+		if theirs <= mine { continue }
+		if hex_distance(e.pos, u.pos) <= et.move + theirs * 3 / 2 { return true }
+	}
+	return false
+}
+
 // True if some enemy the unit's side can see could, on its next turn, move
 // (with its full movement, around the units its side knows of) to a hex from
 // which it can attack this unit.
@@ -470,9 +487,11 @@ ai_tactical_unit :: proc(g: ^Game, unit: int) {
 	if best_score.x >= 2 && best_score.x < HOLD_PENALTY && closest_unsafe < best_score.x {
 		g.ai_holding[f] = true // it could have gone closer, but waited
 	}
-	// cannot attack and cannot get out of reach: dig in
+	// cannot attack and cannot get out of reach: dig in, unless a shooter
+	// that outranges it is in the threat (it would only wait to be shot;
+	// advancing at least drives the shooter back towards the map edge)
 	if best_score.x >= HOLD_PENALTY || (best_score.x >= 2 && !hold && mask_has(threat, best)) {
-		if can_fortify(g, unit) && ai_threatened(g, unit) {
+		if can_fortify(g, unit) && !ai_outranged(g, unit) && ai_threatened(g, unit) {
 			fortify(g, unit)
 			return
 		}
