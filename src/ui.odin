@@ -47,6 +47,8 @@ Action :: enum {
 	Start, // arg: scenario index
 	Back,
 	Resume,
+	Auto_Resolve,
+	Take_Back,
 	End_Turn,
 	Restart,
 	Quit,
@@ -265,6 +267,8 @@ menu_items :: proc(id: Menu_Id) -> []Item {
 	case .Pause:
 		add(&n, "Resume", .Resume)
 		if !auto_end && human_turn() { add(&n, "End turn", .End_Turn, enabled = game.units_left_to_act(&g) == 0) }
+		if g.winner < 0 && has_human() { add(&n, "Let the computer finish", .Auto_Resolve) }
+		if g.winner < 0 && auto_side >= 0 { add(&n, "Take back control", .Take_Back) }
 		if !has_human() {
 			names := [View_Mode]string{.Everything = "everything", .Red = "Red's side", .Blue = "Blue's side"}
 			add(&n, fmt.tprintf("View: %s", names[view_mode]), .View)
@@ -312,6 +316,12 @@ activate :: proc(it: Item) {
 	case .End_Turn:
 		pop_menu()
 		end_human_turn()
+	case .Auto_Resolve:
+		pop_menu()
+		auto_resolve()
+	case .Take_Back:
+		pop_menu()
+		take_back_control()
 	case .Restart:
 		if g.winner >= 0 {
 			menu_depth = 0
@@ -784,8 +794,8 @@ draw_menus :: proc() {
 	case .Confirm:
 		text("The battle in progress will be lost.", x + w / 2, ty + 6, 13, GREY, 1)
 	case .Game_Over:
-		msg := "Every enemy is down." if has_human() && g.factions[g.winner].controller == .Human else "Your band is gone."
-		if !has_human() { msg = "The battle is over." }
+		msg := "Every enemy is down." if g.winner == player_side() else "Your band is gone."
+		if player_side() < 0 { msg = "The battle is over." }
 		text(msg, x + w / 2, ty + 6, 13, GREY, 1)
 	case .Help:
 		for line, i in HELP { text(line, x + 20, ty + 6 + f32(i) * 18, 12, WHITE) }

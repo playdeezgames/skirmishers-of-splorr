@@ -366,7 +366,14 @@ The user's list of what the game still needs, to be planned one at a time:
   November 7, 2026).
 - **Auto-resolve:** in a game with a human player, a way to hand the battle to
   the computer to finish, switching straight to fast speed (added November 7,
-  2026).
+  2026). **Built November 8, 2026:** "Let the computer
+  finish" in the pause menu hands your side to the computer, which plays it at
+  fast speed whatever the speed option says (the option itself is untouched),
+  keeping your side's view (V still switches it). The panel says "The
+  computer is finishing for you" and your army line "you, by computer".
+  "Take back control" in the same menu returns it, even in the middle of your
+  turn. The end screen still counts the result as your win or loss. A new
+  battle or a restart always starts with you in control.
 
 ## Suggested order
 

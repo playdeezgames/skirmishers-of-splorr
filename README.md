@@ -32,7 +32,7 @@ On a touch screen a tap on a hex shows what is there before anything happens; ta
 
 - When your turn starts, your first unit is selected and the cursor is on it. Yellow hexes show where it can move and a red ring marks an enemy it can attack: OK on either does it. After a unit acts, the next one is selected for you.
 - OK on another of your units selects it. OK on the selected unit again opens its menu: **Fortify**, **Finish move**, and for a Wololo **Chant** (bless or curse an area).
-- Cancel drops the selection; with nothing selected it opens the menu (Resume, Options, Restart this battle, Quit to title). Restarting or quitting a battle in progress asks first.
+- Cancel drops the selection; with nothing selected it opens the menu (Resume, Let the computer finish, Options, Restart this battle, Quit to title). **Let the computer finish** hands your side to the computer, which plays out the battle at fast speed; **Take back control** in the same menu returns it. Restarting or quitting a battle in progress asks first.
 - **The turn ends by itself** once none of your units can do anything more. **Options** can make you press **End turn** instead (in the menu, the panel button or **E**); there you also turn **sound** on or off and choose the **computer speed**. Options are remembered in your browser.
 - Keyboard shortcuts: **F** finish move, **C** chant mode (Wololo), **M** sound, **E** end turn, **V** switch whose view a computer-against-computer battle shows (also in the menu).
 

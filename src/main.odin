@@ -229,6 +229,7 @@ start_game :: proc(n: int) {
 	auto_end_timer = 0
 	backdrop_timer = 0
 	game_over_shown = false
+	auto_side = -1
 	anim_skip()
 	last_winner = -1
 	last_turn_owner = -1
@@ -279,6 +280,42 @@ viewer :: proc() -> int {
 	case .Everything:
 	}
 	return game.NO_FACTION
+}
+
+// Auto-resolve: the player's side, handed to the computer to finish the
+// battle at fast speed (Let the computer finish, in the menu), or -1. Take back
+// control gives it back, even mid-turn.
+auto_side := -1
+
+auto_resolve :: proc() {
+	for i in 0 ..< g.faction_count {
+		if g.factions[i].controller == .Human {
+			auto_side = i
+			g.factions[i].controller = .Computer
+			view_mode = .Red if i == 0 else .Blue // still your side's view
+			break
+		}
+	}
+	selected = -1
+	chant_mode = .Off
+	ai_timer = 0
+}
+
+take_back_control :: proc() {
+	if auto_side < 0 { return }
+	g.factions[auto_side].controller = .Human
+	auto_side = -1
+	selected = -1
+	if human_turn() { select_next_unit() }
+}
+
+// The side the player is on, playing or auto-resolving; -1 when watching.
+player_side :: proc() -> int {
+	if auto_side >= 0 { return auto_side }
+	for i in 0 ..< g.faction_count {
+		if g.factions[i].controller == .Human { return i }
+	}
+	return -1
 }
 
 has_human :: proc() -> bool {
@@ -382,7 +419,7 @@ step :: proc(dt: f64, c: runtime.Context) -> bool {
 	context = ctx
 	free_all(context.temp_allocator)
 
-	sdt := dt * 2 if fast else dt // Options: computer speed
+	sdt := dt * 2 if fast || auto_side >= 0 else dt // Options: computer speed; auto-resolve is always fast
 	anim_update(sdt)
 	// the computer plays while no menu is open (the title screen's battle
 	// plays on behind it)
@@ -432,7 +469,7 @@ turn_sounds :: proc() {
 	if anim_busy() { return }
 	if g.winner >= 0 && last_winner < 0 {
 		last_winner = g.winner
-		lost := has_human() && g.factions[g.winner].controller != .Human
+		lost := player_side() >= 0 && g.winner != player_side()
 		play(.Lose if lost else .Win)
 	}
 	owner := g.current + g.turn * game.MAX_FACTIONS
@@ -600,7 +637,9 @@ draw_panel :: proc() {
 		status = fmt.tprintf("Turn %d: %s is thinking...", g.turn, f.name)
 	}
 	text(status, x, 76, 16, f.color if g.winner < 0 else g.factions[g.winner].color)
-	if !has_human() {
+	if auto_side >= 0 && g.winner < 0 {
+		text("The computer is finishing for you (see Menu)", x, 96, 12, GREY)
+	} else if !has_human() {
 		names := [View_Mode]string{.Everything = "everything", .Red = "Red's side", .Blue = "Blue's side"}
 		text(fmt.tprintf("Showing %s (View in the menu)", names[view_mode]), x, 96, 12, GREY)
 	}
@@ -631,7 +670,7 @@ draw_panel :: proc() {
 
 	for i in 0 ..< g.faction_count {
 		fc := &g.factions[i]
-		who := "you" if fc.controller == .Human else "computer"
+		who := "you" if fc.controller == .Human else "you, by computer" if i == auto_side else "computer"
 		text(fmt.tprintf("%s (%s): %d units, %d points", fc.name, who, game.living_units(&g, i), game.army_points(&g, i)), x, 324 + f32(i) * 18, 13, fc.color)
 	}
 
