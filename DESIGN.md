@@ -456,8 +456,22 @@ advances instead, which drives a kiting shooter back to the map edge.
   Ambush in the Woods 48/51 stayed in balance.
 - **Archers are now overpriced at 20 in open fights**: 5a v 7k went 53% ->
   32%, 2h2p4a v 2h2p4s4k 50% -> 28%. Their old value leaned on the computer
-  sitting still under arrows. A new price is for the user to decide (hills
-  stay strong by design).
+  sitting still under arrows. **Repriced November 9, 2026, at the user's
+  request: 16 points** (see Archer price, again).
+
+## Archer price, again (November 9, 2026)
+
+With the computer advancing under arrows, an archer is worth (300 games
+each, in kobolds at 10): 12 against kobolds in the open (5a v 6k 52%, 5k
+69%), 11 with half the map forest (5a v 4k 81%), 14 on some hills (5a v 6k
+66%, 8k 37%), 20 behind a heavy and pike screen (2h2p4a v 2h2p8k 49%, 7k
+61%, 9k 41%), and 16 in the warband (with the archer v with a kobold 59%,
+v two kobolds 45%); against slingers, which shoot back, far less (2h2p4a v
+2h2p4s4k 28%). **Set to 16**, the warband value and about the middle, the
+same as the crossbow. Battle win rates do not depend on prices, so the
+scenarios keep their balance; their point totals change (the warband is now
+200 a side, River Crossing 200, Walled Farmsteads 212, Shield Wall 142 v 149,
+Ambush in the Woods 145 v 122, Archers on the Heights 114 v 117).
 
 ## Roadmap ideas (not decided in detail; November 7, 2026)
 

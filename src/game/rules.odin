@@ -317,7 +317,7 @@ UNIT_TYPES := [Unit_Kind]Unit_Type {
 		defense = {.White = 1, .Red = 0, .Black = 0},
 		body = 1,
 		move = 4,
-		points = 20, // was 14 (fair against kobolds: 5a v 7k 53%); in mixed armies 4a = 4s4k (2h2p4a v 2h2p4s4k 50%), and slow heavies cannot catch them (5a v 5h 86%) (simulator, November 7, 2026)
+		points = 16, // November 9, 2026, after the computer stopped fortifying under arrows (was 20, and 14 before November 7): 12 against kobolds in the open (5a v 6k 52%), 11 in heavy forest, 14 on some hills (5a v 7k ~50%), 20 behind a heavy and pike screen (2h2p4a v 2h2p8k 49%), 16 in the warband (archer v 1k 59%, v 2k 45%); far less against slingers (2h2p4a v 2h2p4s4k 28%)
 		vision = 7,
 	},
 	.Crossbow = {

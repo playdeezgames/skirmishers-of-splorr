@@ -273,7 +273,7 @@ setup_kobold_hills :: proc(g: ^Game, percent: int) {
 setup_kobold_hills_15 :: proc(g: ^Game) { setup_kobold_hills(g, 15) }
 setup_kobold_hills_35 :: proc(g: ^Game) { setup_kobold_hills(g, 35) }
 
-// Nine a side, 204 points each: a champion, two heavies, a pike, a slinger,
+// Nine a side, 200 points each: a champion, two heavies, a pike, a slinger,
 // an archer, a crossbow, a scout and a Wololo, on the usual light woods and
 // road.
 setup_kobold_warband :: proc(g: ^Game) {
@@ -310,7 +310,7 @@ setup_bands :: proc(g: ^Game, forest, hills: int, red_kinds, blue_kinds: []Unit_
 }
 
 // Heavies, pikes, crossbows and a Wololo (142 points) against archers, a scout
-// and a crowd of kobolds (161): 53% to 47%. (Two kobolds more since November
+// and a crowd of kobolds (149): 53% to 47%. (Two kobolds more since November
 // 8, 2026, when the computer stopped fortifying under shooters that outrange
 // it: 74% to 24% before.)
 setup_shield_wall :: proc(g: ^Game) {
@@ -331,7 +331,7 @@ setup_champions_guard :: proc(g: ^Game) {
 }
 
 // Half the map is forest, where bows see little: archers, a scout and kobolds
-// (161 points) against heavies, a pike, crossbows and a Wololo (122): 51% to 48%.
+// (145 points) against heavies, a pike, crossbows and a Wololo (122): 51% to 48%.
 // The archers' points overstate them here: forest is where bows are weakest.
 setup_woods_ambush :: proc(g: ^Game) {
 	red := [?]Unit_Kind{.Archer, .Kobold, .Archer, .Kobold, .Scout, .Kobold, .Archer, .Kobold, .Archer, .Kobold, .Kobold, .Kobold}
@@ -340,7 +340,7 @@ setup_woods_ambush :: proc(g: ^Game) {
 }
 
 // Hilly ground, where bows shoot half as far again from high ground: four
-// archers and two heavies (130 points) against a heavy, two pikes, two
+// archers and two heavies (114 points) against a heavy, two pikes, two
 // crossbows and a Wololo (117): 50% to 50% (400 games; 54% to 46% in 300
 // more). Smaller since November 8, 2026, when the computer stopped
 // fortifying under shooters that outrange it (19% to 80% with the old 162).
@@ -352,14 +352,14 @@ setup_archer_heights :: proc(g: ^Game) {
 
 WARBAND := [?]Unit_Kind{.Archer, .Heavy, .Pike, .Champion, .Wololo, .Scout, .Kobold_Slinger, .Heavy, .Crossbow}
 
-// The warband against itself (204 points a side) with a deep river between
+// The warband against itself (200 points a side) with a deep river between
 // them, crossed only at two or three shallow fords (and by the road's bridge,
 // if it crosses): 51% to 47% (400 games, 9 unfinished).
 setup_river_crossing :: proc(g: ^Game) {
 	setup_bands(g, -1, 0, WARBAND[:], WARBAND[:], water = .River)
 }
 
-// The warband and a sapper against the same (216 points a side) among
+// The warband and a sapper against the same (212 points a side) among
 // walled farmsteads and field walls, with a stream across the middle:
 // 47.5% to 52% (400 games; the computer strikes about 0.1 walls a game).
 WARBAND_SAPPER := [?]Unit_Kind{.Archer, .Heavy, .Pike, .Champion, .Wololo, .Scout, .Kobold_Slinger, .Sapper, .Heavy, .Crossbow}
