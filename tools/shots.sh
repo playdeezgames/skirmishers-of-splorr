@@ -13,6 +13,7 @@ python3 -m http.server -d build/web "$PORT" >/dev/null 2>&1 &
 SERVER=$!
 trap 'kill $SERVER' EXIT
 sleep 1
+rm -rf build/shots assets/screenshots
 mkdir -p build/shots assets/screenshots
 
 # name, scenario (1-based), computer actions played before the picture
@@ -21,10 +22,12 @@ shot() {
 		--window-size=1060,624 --virtual-time-budget=2000 \
 		--screenshot="build/shots/$1.png" "http://localhost:$PORT/?scenario=$2&steps=$3" 2>/dev/null
 }
-shot 01-skirmish 1 0
+# (watch=1 hands human sides to the computer so ?steps=N can play them)
+shot 01-river "14&watch=1" 24
 shot 02-battle 3 90
-shot 03-forest 6 0
-shot 04-fight 2 22
+shot 03-farmsteads "15&watch=1" 40
+shot 04-warband "9&watch=1" 30
+shot 05-fight 2 22
 
 python3 -I tools/make_cover.py build/shots assets
 ls -la assets/screenshots assets/cover.png
