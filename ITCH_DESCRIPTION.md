@@ -1,4 +1,4 @@
-Page: https://thegrumpygamedev.itch.io/skirmishers-of-splorr (not created yet; the slug is a guess until it exists)
+Page: https://thegrumpygamedev.itch.io/skirmishers-of-splorr (draft created November 15, 2026; edit page https://itch.io/game/edit/5368297)
 Jam: none
 Kind of project: HTML, played in the browser. Embed: "Click to launch in fullscreen", mobile friendly.
 Pasted in by hand; nothing here is published by the repo. Refreshed November 15, 2026 for the first itch.io release.

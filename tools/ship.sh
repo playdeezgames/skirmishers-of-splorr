@@ -2,13 +2,12 @@
 # Prepares the itch.io build: tests, a size-optimised web build, a zip. Pushes ONLY with --push. Never commits,
 # never deletes anything but its own zip. Usage: tools/ship.sh [--push]
 #
-# Page: https://thegrumpygamedev.itch.io/skirmishers-of-splorr (not created yet, November 5, 2026).
-# TARGET stays empty until the user creates the page and says the game goes to itch.io; then set it to
-# "thegrumpygamedev/skirmishers-of-splorr:html" (new pages use the html channel).
+# Page: https://thegrumpygamedev.itch.io/skirmishers-of-splorr (created as a draft November 15, 2026, edit id 5368297).
+# New pages use the html channel; do not rename it once the page is live.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ODIN=${ODIN:-odin}
-TARGET=""
+TARGET="thegrumpygamedev/skirmishers-of-splorr:html"
 ZIP="build/skirmishers-of-splorr-html5.zip"
 
 ODIN="$ODIN" ./test.sh
